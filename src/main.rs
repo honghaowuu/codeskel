@@ -4,6 +4,7 @@ mod generated;
 mod lang;
 mod models;
 mod parsers;
+mod resolver;
 mod walker;
 
 use clap::Parser;
