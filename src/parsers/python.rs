@@ -14,7 +14,7 @@ fn node_text<'a>(node: tree_sitter::Node, bytes: &'a [u8]) -> &'a str {
 }
 
 /// Check if the first body statement is a docstring (expression_statement containing a string).
-fn first_body_is_docstring(body: tree_sitter::Node, bytes: &[u8]) -> bool {
+fn first_body_is_docstring(body: tree_sitter::Node, _bytes: &[u8]) -> bool {
     let mut cursor = body.walk();
     for child in body.children(&mut cursor) {
         match child.kind() {

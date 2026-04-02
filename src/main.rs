@@ -9,7 +9,11 @@ fn main() {
         Commands::Rescan(args) => codeskel::commands::rescan::run(args),
     };
     match result {
-        Ok(_) => {}
+        Ok(had_warnings) => {
+            if had_warnings {
+                std::process::exit(2);
+            }
+        }
         Err(e) => {
             eprintln!("Error: {e}");
             std::process::exit(1);

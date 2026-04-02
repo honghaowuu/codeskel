@@ -138,6 +138,30 @@ fn test_scan_java_fixture() {
 }
 
 #[test]
+fn test_scan_python_fixture() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/python_project");
+    let tmp = tempdir().unwrap();
+
+    let result = codeskel::scanner::scan(&root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.8,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    assert_eq!(result.stats.total_files, 2,
+        "should discover utils.py and service.py");
+    // service.py has no docstrings → to_comment ≥ 1
+    assert!(result.stats.to_comment >= 1,
+        "service.py has no docstrings, should be in to_comment");
+    // languages detected
+    assert!(result.detected_languages.contains(&"python".to_string()));
+}
+
+#[test]
 fn test_scan_writes_cache() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/java_project");
