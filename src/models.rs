@@ -24,9 +24,27 @@ impl Language {
             Language::JavaScript => "javascript",
             Language::Go => "go",
             Language::Rust => "rust",
-            Language::CSharp => "cs",
+            Language::CSharp => "csharp",
             Language::Cpp => "cpp",
             Language::Ruby => "ruby",
+        }
+    }
+}
+
+impl std::str::FromStr for Language {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "java" => Ok(Language::Java),
+            "python" => Ok(Language::Python),
+            "typescript" => Ok(Language::TypeScript),
+            "javascript" => Ok(Language::JavaScript),
+            "go" => Ok(Language::Go),
+            "rust" => Ok(Language::Rust),
+            "csharp" | "cs" => Ok(Language::CSharp),
+            "cpp" | "c++" => Ok(Language::Cpp),
+            "ruby" => Ok(Language::Ruby),
+            other => Err(format!("unknown language: {}", other)),
         }
     }
 }
@@ -68,6 +86,7 @@ pub struct FileEntry {
     pub package: Option<String>,
     pub comment_coverage: f64,
     pub skip: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub skip_reason: Option<String>,
     pub cycle_warning: bool,
     pub internal_imports: Vec<String>, // resolved relative paths of internal deps
@@ -126,5 +145,33 @@ mod tests {
         let back: Signature = serde_json::from_str(&json).unwrap();
         assert_eq!(back.name, "findByEmail");
         assert_eq!(back.throws, vec!["DatabaseException"]);
+    }
+
+    #[test]
+    fn language_serde_csharp() {
+        let lang = Language::CSharp;
+        let json = serde_json::to_string(&lang).unwrap();
+        assert_eq!(json, "\"csharp\"");
+        let back: Language = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, Language::CSharp);
+    }
+
+    #[test]
+    fn file_entry_skip_reason_omitted_when_none() {
+        let entry = FileEntry {
+            path: "src/Foo.java".into(),
+            language: "java".into(),
+            package: None,
+            comment_coverage: 0.5,
+            skip: false,
+            skip_reason: None,
+            cycle_warning: false,
+            internal_imports: vec![],
+            signatures: vec![],
+            scanned_at: None,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(!json.contains("skip_reason"), "skip_reason should be omitted when None, got: {}", json);
+        assert!(!json.contains("package"), "package should be omitted when None");
     }
 }
