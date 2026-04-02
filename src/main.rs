@@ -1,27 +1,18 @@
-mod cache;
-mod cli;
-mod graph;
-mod generated;
-mod lang;
-mod models;
-mod parsers;
-mod resolver;
-mod walker;
-
 use clap::Parser;
-use cli::{Cli, Commands};
+use codeskel::cli::{Cli, Commands};
 
 fn main() {
     let cli = Cli::parse();
-    match cli.command {
-        Commands::Scan(args) => {
-            eprintln!("scan: {:?}", args.project_root);
-        }
-        Commands::Get(args) => {
-            eprintln!("get: {:?}", args.cache_path);
-        }
-        Commands::Rescan(args) => {
-            eprintln!("rescan: {:?}", args.cache_path);
+    let result = match cli.command {
+        Commands::Scan(args) => codeskel::commands::scan::run(args),
+        Commands::Get(args) => codeskel::commands::get::run(args),
+        Commands::Rescan(args) => codeskel::commands::rescan::run(args),
+    };
+    match result {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
         }
     }
 }

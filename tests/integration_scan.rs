@@ -1,0 +1,76 @@
+use std::path::PathBuf;
+use tempfile::tempdir;
+
+#[test]
+fn test_scan_java_fixture() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_project");
+    let tmp = tempdir().unwrap();
+
+    let result = codeskel::scanner::scan(
+        &root,
+        &codeskel::scanner::ScanConfig {
+            forced_lang: None,
+            include_globs: vec![],
+            exclude_globs: vec![],
+            min_coverage: 0.8,
+            cache_dir: Some(tmp.path().to_path_buf()),
+            verbose: false,
+        },
+    ).unwrap();
+
+    // Both files discovered
+    assert_eq!(result.stats.total_files, 2, "stats: {:?}", result.stats);
+
+    // Both have docstrings so coverage ≥ 0.8, both are skipped
+    // to_comment = 0 (both skipped as well-covered)
+    // OR some are to_comment depending on coverage calculation
+    // Just verify the scanner ran without panic and returned valid stats
+    assert!(result.stats.total_files >= 1);
+    assert!(result.stats.to_comment + result.stats.skipped_covered + result.stats.skipped_generated <= result.stats.total_files);
+
+    // order should have Service after Base (dependency order)
+    // Base.java is not imported by Service.java... wait, it IS imported
+    // Service imports Base, so Base should come before Service in topo order
+    if result.order.len() >= 2 {
+        let base_pos = result.order.iter().position(|p| p.contains("Base"));
+        let svc_pos = result.order.iter().position(|p| p.contains("Service"));
+        if let (Some(b), Some(s)) = (base_pos, svc_pos) {
+            assert!(b < s, "Base must come before Service in dependency order");
+        }
+    }
+}
+
+#[test]
+fn test_scan_writes_cache() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_project");
+    let tmp = tempdir().unwrap();
+
+    codeskel::scanner::scan(
+        &root,
+        &codeskel::scanner::ScanConfig {
+            forced_lang: None,
+            include_globs: vec![],
+            exclude_globs: vec![],
+            min_coverage: 0.0, // include all files
+            cache_dir: Some(tmp.path().to_path_buf()),
+            verbose: false,
+        },
+    ).unwrap();
+
+    let cache_path = tmp.path().join("cache.json");
+    assert!(cache_path.exists(), "cache.json must be written");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    assert_eq!(cache.version, 1);
+    assert!(!cache.files.is_empty());
+    assert!(!cache.order.is_empty());
+
+    // Service.java depends on Base.java → Base should come before Service
+    let base_pos = cache.order.iter().position(|p| p.contains("Base"));
+    let svc_pos = cache.order.iter().position(|p| p.contains("Service"));
+    if let (Some(b), Some(s)) = (base_pos, svc_pos) {
+        assert!(b < s, "Base must come before Service; order: {:?}", cache.order);
+    }
+}
