@@ -1,5 +1,6 @@
 mod cache;
 mod cli;
+mod graph;
 mod generated;
 mod lang;
 mod models;
