@@ -1,5 +1,9 @@
+mod cache;
 mod cli;
+mod generated;
+mod lang;
 mod models;
+mod walker;
 
 use clap::Parser;
 use cli::{Cli, Commands};
