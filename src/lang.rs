@@ -16,15 +16,17 @@ pub fn detect_language(path: &Path) -> Option<Language> {
     }
 }
 
+/// Parse a language from a CLI --lang argument.
+/// Accepts both short forms (ts, js, cs) and full names (typescript, javascript, csharp).
 pub fn lang_from_str(s: &str) -> Option<Language> {
     match s {
         "java" => Some(Language::Java),
         "python" => Some(Language::Python),
-        "ts" => Some(Language::TypeScript),
-        "js" => Some(Language::JavaScript),
+        "ts" | "typescript" => Some(Language::TypeScript),
+        "js" | "javascript" => Some(Language::JavaScript),
         "go" => Some(Language::Go),
         "rust" => Some(Language::Rust),
-        "cs" => Some(Language::CSharp),
+        "cs" | "csharp" => Some(Language::CSharp),
         "cpp" => Some(Language::Cpp),
         "ruby" => Some(Language::Ruby),
         _ => None,

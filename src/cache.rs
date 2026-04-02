@@ -14,7 +14,8 @@ pub fn write_cache(cache_dir: &Path, cache: &CacheFile) -> anyhow::Result<()> {
 pub fn read_cache(cache_path: &Path) -> anyhow::Result<CacheFile> {
     let content = std::fs::read_to_string(cache_path)
         .with_context(|| format!("Cannot read cache from {}", cache_path.display()))?;
-    let cache: CacheFile = serde_json::from_str(&content)?;
+    let cache: CacheFile = serde_json::from_str(&content)
+        .with_context(|| format!("Failed to parse cache at {}", cache_path.display()))?;
     Ok(cache)
 }
 

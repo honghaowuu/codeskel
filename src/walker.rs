@@ -1,5 +1,6 @@
 use crate::lang::detect_language;
 use crate::models::Language;
+use anyhow::Context;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -37,7 +38,14 @@ pub fn walk_project(root: &Path, cfg: &WalkConfig) -> anyhow::Result<Vec<Discove
     };
 
     let mut files = Vec::new();
-    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(root).into_iter() {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("[codeskel] Warning: {}", e);
+                continue;
+            }
+        };
         if !entry.file_type().is_file() {
             continue;
         }
@@ -72,7 +80,7 @@ pub fn walk_project(root: &Path, cfg: &WalkConfig) -> anyhow::Result<Vec<Discove
 fn build_glob_set(user: &[String], defaults: &[&str]) -> anyhow::Result<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for g in defaults.iter().map(|s| s.to_string()).chain(user.iter().cloned()) {
-        builder.add(Glob::new(&g)?);
+        builder.add(Glob::new(&g).with_context(|| format!("invalid glob pattern: {}", g))?);
     }
     Ok(builder.build()?)
 }
