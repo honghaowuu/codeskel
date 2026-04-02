@@ -3,6 +3,7 @@ mod cli;
 mod generated;
 mod lang;
 mod models;
+mod parsers;
 mod walker;
 
 use clap::Parser;
