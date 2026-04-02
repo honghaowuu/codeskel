@@ -60,8 +60,8 @@ pub struct GetArgs {
     #[arg(long)]
     pub path: Option<String>,
 
-    /// Return signature summaries of direct dependencies
-    #[arg(long)]
+    /// Return signature summaries of direct dependencies of FILE (relative to project root)
+    #[arg(long, value_name = "FILE")]
     pub deps: Option<String>,
 }
 
