@@ -29,20 +29,6 @@ fn has_javadoc(node: tree_sitter::Node, bytes: &[u8]) -> bool {
     false
 }
 
-/// Extract text from a scoped_identifier or identifier child
-fn extract_dotted_name(node: tree_sitter::Node, bytes: &[u8]) -> Option<String> {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "scoped_identifier" | "identifier" | "type_identifier" => {
-                return Some(node_text(child, bytes).to_string());
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
 /// Extract modifiers from a modifiers node or from direct children
 fn extract_modifiers_from_node(modifiers_node: tree_sitter::Node, bytes: &[u8]) -> Vec<String> {
     let mut mods = Vec::new();
@@ -112,6 +98,25 @@ fn extract_params(params_node: tree_sitter::Node, bytes: &[u8]) -> Vec<Param> {
         }
     }
     params
+}
+
+fn extract_throws(node: tree_sitter::Node, bytes: &[u8]) -> Vec<String> {
+    let mut throws = vec![];
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "throws" {
+            let mut c2 = child.walk();
+            for t in child.children(&mut c2) {
+                if t.kind() == "type_identifier" || t.kind() == "scoped_type_identifier" {
+                    let text = t.utf8_text(bytes).unwrap_or("").to_string();
+                    if !text.is_empty() {
+                        throws.push(text);
+                    }
+                }
+            }
+        }
+    }
+    throws
 }
 
 struct Walker<'a> {
@@ -353,7 +358,7 @@ impl<'a> Walker<'a> {
             modifiers,
             params: Some(params),
             return_type,
-            throws: Vec::new(),
+            throws: extract_throws(node, self.bytes),
             extends: None,
             implements: Vec::new(),
             annotations: Vec::new(),
@@ -384,7 +389,7 @@ impl<'a> Walker<'a> {
             modifiers,
             params: Some(params),
             return_type: None,
-            throws: Vec::new(),
+            throws: extract_throws(node, self.bytes),
             extends: None,
             implements: Vec::new(),
             annotations: Vec::new(),
@@ -448,7 +453,10 @@ impl LanguageParser for JavaParser {
             .set_language(&tree_sitter_java::LANGUAGE.into())
             .expect("failed to set Java language");
 
-        let tree = parser.parse(source, None).expect("failed to parse");
+        let tree = match parser.parse(source, None) {
+            Some(t) => t,
+            None => return ParseResult::default(),
+        };
         let bytes = source.as_bytes();
 
         // Debug: uncomment to see the AST
@@ -471,11 +479,7 @@ impl LanguageParser for JavaParser {
 
         let documented = documentable.iter().filter(|s| s.has_docstring).count();
         let total = documentable.len();
-        result.coverage = if total > 0 {
-            documented as f64 / total as f64
-        } else {
-            0.0
-        };
+        result.coverage = if total > 0 { documented as f64 / total as f64 } else { 1.0 };
 
         result
     }
@@ -544,6 +548,9 @@ public class User extends Entity implements Auditable {
             .expect("should find findByEmail");
         assert_eq!(m.kind, "method");
         assert!(!m.has_docstring);
+        // Generic return types must be captured correctly
+        assert_eq!(m.return_type.as_deref(), Some("Optional<User>"),
+            "return_type: {:?}", m.return_type);
     }
 
     #[test]
