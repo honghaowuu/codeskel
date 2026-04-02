@@ -1,3 +1,40 @@
-pub fn run(_args: crate::cli::ScanArgs) -> anyhow::Result<bool> {
+use crate::cli::ScanArgs;
+use crate::lang::lang_from_str;
+use crate::models::ScanSummary;
+use crate::scanner::{scan, ScanConfig};
+
+pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
+    // Validate --lang if provided
+    let forced_lang = match &args.lang {
+        Some(s) => {
+            let l = lang_from_str(s)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "Unknown language '{}'. Valid: java, python, ts, js, go, rust, cs, cpp, ruby", s
+                ))?;
+            Some(l)
+        }
+        None => None,
+    };
+
+    let result = scan(
+        &args.project_root,
+        &ScanConfig {
+            forced_lang,
+            include_globs: args.include,
+            exclude_globs: args.exclude,
+            min_coverage: args.min_coverage,
+            cache_dir: args.cache_dir,
+            verbose: args.verbose,
+        },
+    )?;
+
+    let summary = ScanSummary {
+        project_root: result.project_root,
+        detected_languages: result.detected_languages,
+        cache: result.cache_path.to_string_lossy().into_owned(),
+        stats: result.stats,
+    };
+
+    println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(false)
 }
