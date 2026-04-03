@@ -1,0 +1,50 @@
+{
+  "skill_name": "comment",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have a Java service class that has zero comments. Can you add docstrings to it? The file is at /tmp/comment-eval-1/UserService.java",
+      "expected_output": "UserService.java with Javadoc docstrings added to all public methods, the class itself, and public fields. No existing code modified.",
+      "files": [],
+      "assertions": [
+        "All public methods in UserService.java have a Javadoc comment (/** ... */) immediately before them",
+        "The class declaration has a Javadoc comment describing its responsibility",
+        "Public fields have Javadoc comments",
+        "No existing code lines were modified or removed — only docstrings were added",
+        "@param tags are present for methods with non-trivial parameters",
+        "@return tags are present for methods with non-void return types",
+        "Docstrings describe what the method does, not just restate the method name"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My Java project at /tmp/comment-eval-2/myapp has barely any comments and I need to document it for our internal AI tooling. Please add docstrings to the whole thing.",
+      "expected_output": "All undocumented Java files in the project have Javadoc added to classes, methods, and public fields. codeskel scan is run first, then files are processed in dependency order.",
+      "files": [],
+      "assertions": [
+        "codeskel scan is invoked on the project root before processing files",
+        "Files are processed in order (leaf dependencies before dependents)",
+        "All public/protected methods across all files have Javadoc comments",
+        "All classes have class-level Javadoc describing their role",
+        "Progress is reported per file (e.g. [1/N] filename)",
+        "A summary is printed at the end with count of files and items documented",
+        "The user is reminded to run git diff to review changes"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "hey can you add docstrings to my python module? its at /tmp/comment-eval-3/data_pipeline.py — its pretty complex with no comments at all",
+      "expected_output": "data_pipeline.py with Google-style docstrings added to all functions and the module-level classes. Args/Returns/Raises sections included where applicable.",
+      "files": [],
+      "assertions": [
+        "All functions in data_pipeline.py have Google-style docstrings (Args:/Returns:/Raises: sections)",
+        "Classes have class-level docstrings",
+        "Public fields/class attributes that are non-obvious have docstrings",
+        "Docstrings use triple-quoted strings correctly (\"\"\"...\"\"\")",
+        "Args section lists each parameter with its type and meaning",
+        "Returns section describes the return value",
+        "No existing code was modified — only docstrings inserted"
+      ]
+    }
+  ]
+}
