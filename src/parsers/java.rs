@@ -474,7 +474,7 @@ impl LanguageParser for JavaParser {
         let documentable: Vec<&Signature> = result
             .signatures
             .iter()
-            .filter(|s| matches!(s.kind.as_str(), "class" | "interface" | "enum" | "method" | "constructor"))
+            .filter(|s| matches!(s.kind.as_str(), "class" | "interface" | "enum" | "method" | "constructor" | "field"))
             .collect();
 
         let documented = documentable.iter().filter(|s| s.has_docstring).count();

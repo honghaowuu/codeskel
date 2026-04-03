@@ -81,19 +81,27 @@ impl<'a> Walker<'a> {
         // using_directive has a name child with the namespace
         let full_text = node_text(node, self.bytes);
         // Strip "using " prefix and ";" suffix
-        let trimmed = full_text
+        let ns = full_text
             .trim()
             .strip_prefix("using ")
             .unwrap_or("")
             .trim_end_matches(';')
             .trim();
 
-        // Exclude System.* and Microsoft.*
-        if trimmed.starts_with("System") || trimmed.starts_with("Microsoft") {
+        // Skip alias imports (contain '=')
+        if ns.contains('=') {
             return;
         }
-        if !trimmed.is_empty() {
-            self.result.raw_imports.push(trimmed.to_string());
+
+        // Strip 'static ' prefix
+        let ns = ns.trim_start_matches("static ").trim();
+
+        // Exclude System.* and Microsoft.*
+        if ns.starts_with("System") || ns.starts_with("Microsoft") {
+            return;
+        }
+        if !ns.is_empty() {
+            self.result.raw_imports.push(ns.to_string());
         }
     }
 
@@ -269,5 +277,18 @@ namespace MyApp.Services
             "sigs: {:?}", r.signatures.iter().map(|s| &s.name).collect::<Vec<_>>());
         assert!(!r.signatures.iter().any(|s| s.name == "Helper"),
             "private methods must not appear");
+    }
+
+    #[test]
+    fn test_csharp_using_static_excluded() {
+        let src = "using static MyApp.Helpers.StringUtils;\nusing System;\npublic class Foo {}";
+        let r = CSharpParser::new().parse(src);
+        // "static MyApp.Helpers.StringUtils" should NOT appear (malformed key)
+        // But "MyApp.Helpers.StringUtils" should appear after stripping "static "
+        // And System should be excluded
+        assert!(!r.raw_imports.iter().any(|i| i.starts_with("static ")),
+            "static prefix must be stripped: {:?}", r.raw_imports);
+        assert!(!r.raw_imports.iter().any(|i| i == "System"),
+            "System must be excluded: {:?}", r.raw_imports);
     }
 }

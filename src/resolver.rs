@@ -39,12 +39,19 @@ impl Resolver {
             }
             Language::Go => {
                 if let Some(module) = go_module {
+                    // Group files by package directory for deterministic resolution
+                    let mut pkg_files: HashMap<String, Vec<String>> = HashMap::new();
                     for p in rel_paths {
                         let pkg_path = go_pkg_path(p);
                         if !pkg_path.is_empty() {
-                            let import_path = format!("{}/{}", module.trim_end_matches('/'), pkg_path);
-                            file_index.insert(import_path, p.clone());
+                            pkg_files.entry(pkg_path).or_default().push(p.clone());
                         }
+                    }
+                    // Map import path to the first (sorted) file in the package
+                    for (pkg_path, mut files) in pkg_files {
+                        files.sort();
+                        let import_path = format!("{}/{}", module.trim_end_matches('/'), pkg_path);
+                        file_index.insert(import_path, files[0].clone());
                     }
                 }
                 // Without go.mod, all Go imports are external — index nothing

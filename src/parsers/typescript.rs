@@ -19,7 +19,7 @@ fn preceding_jsdoc(node: tree_sitter::Node, source: &str) -> bool {
     while let Some(p) = prev {
         match p.kind() {
             "comment" => {
-                return source[p.byte_range()].starts_with("/**");
+                return source.get(p.byte_range()).map_or(false, |s| s.starts_with("/**"));
             }
             _ if p.is_extra() => {
                 prev = p.prev_sibling();
