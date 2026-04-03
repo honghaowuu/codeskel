@@ -24,20 +24,47 @@ also needed to replace raw `pom.xml` reads.
 **New:** `annotations: [{"name": "RestController", "value": null}, {"name": "RequestMapping", "value": "/api/v1/users"}]`
 
 The `value` field captures the default (unnamed) argument only. Named arguments and
-multi-argument annotations set `value: null`.
+multi-argument annotations intentionally set `value: null` in this version — named
+argument capture is out of scope.
 
 ### 2. `docstring_text: string | null`
 
 New field on every `Signature`. Contains the raw text of the preceding doc comment,
 stripped of language-specific delimiters. `null` when `has_docstring` is false.
+`has_docstring` is kept as-is for backward compatibility; `docstring_text.is_some()`
+always equals `has_docstring`.
 
 Strip rules per language:
-- **Java/TS/JS/C/C++**: remove `/**`, `*/`, and leading ` * ` from each line
-- **Python**: remove triple-quote delimiters (`"""` or `'''`)
-- **Go/Rust/C#**: strip `//`, `///`, `//!` prefix from each line
-- **Ruby**: strip `#` prefix from each line
+- **Java/TS/JS/C/C++**: remove opening `/**`, closing `*/`; strip leading ` * ` or ` *`
+  (with or without trailing space) from each interior line; trim trailing whitespace per
+  line. Single-line `/** foo */` → `foo`.
+- **Python**: remove surrounding `"""` or `'''` delimiters; trim leading/trailing blank
+  lines from the result.
+- **Go**: strip leading `// ` or `//` (no space) from each line of the immediately
+  preceding comment block (no blank line between comment and declaration).
+- **Rust**: strip leading `/// ` / `///` or `//! ` / `//!` from each line.
+- **C#**: strip leading `/// ` / `///` from each line.
+- **Ruby**: strip leading `# ` or `#` from each line of the immediately preceding comment
+  block (no blank line between comment and declaration).
+
+For Go and Ruby, "immediately preceding" follows the same definition already used by
+`has_docstring` detection in those parsers — no blank line gap between the last comment
+line and the declaration.
 
 ### 3. `codeskel pom` Subcommand
+
+CLI signature:
+```
+codeskel pom [OPTIONS] [project_root]
+
+Arguments:
+  [project_root]            Path to the project root (default: current directory)
+
+Options:
+  --controller-path <path>  Path hint for multi-module resolution: selects the
+                            sub-module whose directory contains this path
+  -h, --help                Print help
+```
 
 Reads `pom.xml` without a cache. Outputs compact JSON:
 
@@ -55,16 +82,28 @@ Reads `pom.xml` without a cache. Outputs compact JSON:
 }
 ```
 
-Multi-module: if root `pom.xml` has `<modules>`, select the sub-module whose directory
-contains `--controller-path`. Inherit `groupId` from parent when absent in module POM.
-Resolve `${prop}` version references from module then parent `<properties>`.
-
-`internal_sdk_deps` filter: `artifactId` ends in `-api` or `-sdk` AND `groupId` starts
-with the root POM `groupId` prefix.
-
-`existing_skill_path`: check `docs/skills/<service_name>/SKILL.md` under project root.
+- **`service_name`**: derived from `<artifactId>` of the resolved (sub-)module POM.
+- **Multi-module**: if root `pom.xml` has `<modules>`, select the sub-module whose
+  directory path contains `--controller-path`. Use that sub-module's `pom.xml`.
+  Inherit `groupId` from parent when absent in module POM. Set `is_multi_module: true`.
+- **Version resolution**: if `<version>` is a `${prop}` reference, resolve from module
+  `<properties>` first, then parent `<properties>`. If still unresolved, output the raw
+  `${prop}` string as-is.
+- **`internal_sdk_deps`**: filter `<dependency>` entries where `artifactId` ends in
+  `-api` or `-sdk` AND `groupId` starts with the root POM `groupId` prefix. An empty
+  list is valid (not an error).
+- **`existing_skill_path`**: check `docs/skills/<service_name>/SKILL.md` under the
+  directory containing the resolved `pom.xml`. Return absolute path if present, `null`
+  otherwise.
+- **`project_root`** (for `existing_skill_path` lookup): the directory containing the
+  resolved `pom.xml` file.
 
 XML library: `roxmltree` (read-only, document-oriented, clean tree API).
+
+**C++ attributes:** In C++, `[[nodiscard]]`, `[[deprecated("msg")]]`, etc. are the
+annotation equivalent. Extract `[[attr]]` syntax: `name` is the attribute identifier,
+`value` is the argument string if present (e.g. `"msg"` from `[[deprecated("msg")]]`),
+otherwise `null`.
 
 ---
 
@@ -93,13 +132,24 @@ source file ──► parser (tree-sitter)
 
 ## Error Handling
 
+### Signature enrichment
 | Condition | Behavior |
 |---|---|
-| No `pom.xml` found | Exit 1 with message to stderr |
-| Missing `artifactId`/`groupId` | Exit 1 with descriptive message |
-| `${prop}` reference unresolvable | Use raw string as-is |
 | Annotation without default arg | `value: null` |
-| Doc comment present but empty | `docstring_text: ""` |
+| Annotation with named args only | `value: null` |
+| Doc comment present but empty | `docstring_text: ""` (empty string, not null) |
+
+### `codeskel pom`
+| Condition | Behavior |
+|---|---|
+| No `pom.xml` found anywhere | Exit 1 with message to stderr |
+| Missing `artifactId` in resolved POM | Exit 1 with descriptive message |
+| Missing `groupId` in all reachable POMs | Exit 1 with descriptive message |
+| `${prop}` reference unresolvable | Output raw `${prop}` string as-is |
+| Malformed XML | Exit 1 with parse error message to stderr |
+| Permission error reading `pom.xml` | Exit 1 with IO error message to stderr |
+| No matching sub-module for `--controller-path` | Exit 1 with descriptive message |
+| No internal SDK deps found | Valid empty list `[]`, exit 0 |
 
 ---
 
