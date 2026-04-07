@@ -15,6 +15,8 @@ pub enum Commands {
     Get(GetArgs),
     /// Re-analyze specific files after commenting
     Rescan(RescanArgs),
+    /// Extract Maven project metadata from pom.xml
+    Pom(PomArgs),
 }
 
 #[derive(Args, Debug)]
@@ -72,4 +74,15 @@ pub struct RescanArgs {
 
     /// Files to re-parse
     pub file_paths: Vec<std::path::PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct PomArgs {
+    /// Path to the project root (default: current directory)
+    #[arg(default_value = ".")]
+    pub project_root: std::path::PathBuf,
+
+    /// Path hint for multi-module resolution
+    #[arg(long)]
+    pub controller_path: Option<String>,
 }

@@ -31,6 +31,7 @@ globset = "=0.4.15"
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 thiserror = "1"
+roxmltree = "0.19"
 
 [dev-dependencies]
 tempfile = "=3.14.0"
