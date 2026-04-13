@@ -37,7 +37,7 @@ Count mode:
 { "for": "src/.../UserService.java", "count": 3 }
 ```
 
-Entry mode: identical format to `codeskel get --index` (the full `FileEntry` object).
+Entry mode: identical format to `codeskel get --index` (the full `FileEntry` object). Always returns `Ok(false)` matching existing `run` convention.
 
 Index out of range → exit code 1 with message.
 Count of 0 → file has no internal dependencies.
@@ -46,17 +46,48 @@ Count of 0 → file has no internal dependencies.
 
 **`GetArgs` change:** Add `chain: Option<String>` field. Existing `--index` is reused as modifier.
 
-**Mode validation refactor:** Current `mode_count` logic treats `--index` as a standalone mode. New logic: modes are `{path, deps, chain, index-standalone}`. `--chain` with or without `--index` counts as one mode. `--index` alone (without `--chain`) remains its existing behavior.
+**Mode validation refactor:** Five flags exist: `index`, `path`, `deps`, `chain`, `refs`. Mutual exclusion rules:
+
+| Flags present | Valid? |
+|---|---|
+| `--path` alone | Yes |
+| `--deps` alone | Yes |
+| `--chain` alone | Yes (count mode) |
+| `--chain --index <i>` | Yes (entry mode) |
+| `--refs` alone | Yes |
+| `--index` alone (no `--chain`) | Yes (existing behavior) |
+| Any two of `{--path, --deps, --chain, --refs}` | No — exit 1 |
+| `--index` with anything other than `--chain` | No — exit 1 |
+| None of the above | No — exit 1 |
+
+**Dispatcher pseudocode** for the refactored `run()`:
+
+```
+if chain.is_some() {
+    if let Some(i) = index { get_chain_entry(cache, chain, i) }
+    else                   { get_chain_count(cache, chain) }
+} else if refs.is_some() {
+    get_refs(cache, refs)
+} else {
+    // existing logic: --deps, --path, --index (standalone)
+    if index.is_some() && (path.is_some() || deps.is_some()) → error
+    if deps.is_some()  { get_deps(cache, deps) }
+    else               { get_entry(cache, index, path) }  // existing behavior
+}
+```
+
+`--index` without `--chain` falls through to the existing entry-by-index path. `--index` combined with `--path` or `--deps` (without `--chain`) is rejected inside the existing branch.
 
 **`get_chain_count(cache, file_path) → anyhow::Result<bool>`:**
 - Look up `file_path` in cache (exit 1 if missing)
-- BFS/DFS over `internal_imports` in cache entries, accumulating a visited set
-- Return `{ "for": file_path, "count": visited.len() }`
+- BFS/DFS over `internal_imports` starting from `file_path`'s imports, accumulating a visited set. `file_path` itself is **not** added to the visited set — the chain contains only the transitive dependencies, not the file being queried.
+- Return `{ "for": file_path, "count": visited.len() }`. Count of 0 means no internal deps.
 
 **`get_chain_entry(cache, file_path, index) → anyhow::Result<bool>`:**
-- Compute transitive closure (same BFS as above)
-- Filter `cache.order` (already topo-sorted, deepest dep first) to entries in the closure
-- Return the `FileEntry` at position `index`; error if out of range
+- Compute transitive closure (same BFS as above, excluding `file_path` itself)
+- Filter `cache.order` (already topo-sorted, leaves/deepest deps first) to entries in the closure, preserving order
+- Return the `FileEntry` at position `index`; exit 1 with message if out of range
+- Returns `Ok(false)` on success
 
 Topo ordering reuses `cache.order` — O(N) in cache size, no re-sort needed. Well within 100ms / 50ms budget.
 
@@ -82,11 +113,11 @@ codeskel get <cache_path> --refs <file_path>
 }
 ```
 
-Keys are relative paths of internal dep files. Values are symbol names referenced from that dep. Only names present in the dep's `signatures` appear. External/stdlib refs are silently ignored. Unsupported languages emit `{ "for": ..., "refs": {} }` with a stderr note.
+Keys are relative paths of internal dep files. Values are symbol names referenced from that dep. Only names present in the dep's `signatures` appear (across all `kind` values — class, method, field, constructor, etc.). External/stdlib refs are silently ignored. Unsupported languages emit `{ "for": ..., "refs": {} }` with a stderr note.
 
 ### Architecture
 
-**New `src/refs.rs`** — trait definition and language dispatch:
+**New `src/refs/mod.rs`** — trait definition and language dispatch:
 
 ```rust
 pub trait RefsAnalyzer: Send + Sync {
@@ -105,36 +136,47 @@ pub fn get_refs_analyzer(lang: &Language) -> Option<Box<dyn RefsAnalyzer>> { ...
 
 **Command flow in `get --refs`:**
 1. Load cache, look up file entry (exit 1 if missing)
-2. Build `import_map`: for each dep path in `entry.internal_imports`, derive simple name from dep entry's `package` + last path segment of filename (strip `.java`)
-3. Build `dep_sigs`: for each dep, collect all `sig.name` strings
-4. Call `get_refs_analyzer(&lang)` — `None` → emit empty refs + stderr note
-5. Read source file from disk (using `cache.project_root` + relative path)
-6. Run analyzer, emit result
+2. Build `import_map`: for each dep path in `entry.internal_imports`, look up the dep's `FileEntry` and derive `simple_name` as the filename stem — i.e., `Path::new(dep_path).file_stem().and_then(|s| s.to_str())`, stripping the `.java` extension. This does not use the `package` field (which may be `None`). Map `simple_name → dep_path`.
+3. Build `dep_sigs`: for each dep path in `entry.internal_imports`, collect all `sig.name` strings from the dep's `signatures` regardless of `sig.kind` (includes class, method, field, constructor, interface, enum). Map `dep_path → Vec<String>`.
+4. Call `get_refs_analyzer(&lang)` — if `None` (unsupported language), emit `{ "for": ..., "refs": {} }` to stdout and a note to stderr; return `Ok(false)`
+5. Read source file from disk: `Path::new(&cache.project_root).join(file_path)`
+6. Run analyzer, emit result; return `Ok(false)`
 
 ### Java `RefsAnalyzer` — AST Walk
 
 Uses the same tree-sitter Java grammar already in the project.
 
-**Phase 1 — Build local type map** (pre-pass):
+**Phase 1 — Build local type map** (pre-pass over full tree):
 
-Walk all `local_variable_declaration`, `field_declaration`, and `formal_parameter` nodes. For each, extract `type_identifier` (unwrap `generic_type` → `type_identifier` if needed) as the declared type, and the variable/parameter name. Result: `HashMap<String, String>` of `var_name → declared_type`.
+Walk all `local_variable_declaration`, `field_declaration`, and `formal_parameter` nodes.
 
-**Phase 2 — Collect candidate references**:
+- For `local_variable_declaration` and `field_declaration`: the type is at `child_by_field_name("type")` — accept `type_identifier` directly, or unwrap `generic_type → type_identifier` child. The variable name is inside the `variable_declarator` child (iterate children for kind `"variable_declarator"`) via `child_by_field_name("name")` on that child (same two-level pattern as `handle_field` in `parsers/java.rs`).
+- For `formal_parameter`: same — `child_by_field_name("type")` for type. Name: find the `variable_declarator_id` child, then call `child_by_field_name("name")` on it to get the identifier.
 
-| AST node | Action |
-|---|---|
-| `type_identifier` (in type position) | Add type name as candidate |
-| `object_creation_expression` → type child | Add constructor type name |
-| `method_invocation` with `object` child | Resolve receiver: if identifier in type map → use declared type; if capitalized → use directly (static call). Add `(resolved_type, method_name)` |
-| `field_access` with `object` child | Same receiver resolution. Add `(resolved_type, field_name)` |
+Result: `HashMap<String, String>` of `var_name → declared_type_simple_name`.
 
-Chained calls: tree-sitter represents the receiver of `repo.findById(id).orElseThrow()` as a nested `method_invocation` node, not an identifier — resolution fails and it is silently discarded. Only the outermost real receiver is resolved, matching PRD intent.
+**Phase 2 — Collect candidate references** (second pass):
 
-**Phase 3 — Cross-reference**:
+Skip any node whose ancestor is an `import_declaration` or `package_declaration` — these produce false-positive type name matches.
+
+| AST node | Access method | Action |
+|---|---|---|
+| `type_identifier` (not under import/package) | node text | Add type name as candidate `(type_name, nil)` |
+| `object_creation_expression` | `child_by_field_name("type")` → text | Add `(type_name, nil)` for constructor ref |
+| `method_invocation` | `child_by_field_name("object")` | Resolve receiver text: if in type map → use declared type; if starts uppercase → use directly (static call). Add `(resolved_type, method_name)` where `method_name` = `child_by_field_name("name")` |
+| `field_access` | `child_by_field_name("object")` | Same receiver resolution. Add `(resolved_type, field_name)` where `field_name` = `child_by_field_name("field")` |
+
+Chained calls: tree-sitter represents the receiver of `repo.findById(id).orElseThrow()` as a nested `method_invocation` node at `child_by_field_name("object")` — its text is not a simple identifier, so type map lookup fails and it is silently discarded. Only the outermost real receiver is resolved, matching PRD intent.
+
+**Phase 3 — Cross-reference against dep signatures**:
 
 For each candidate `(type_name, member_name_or_nil)`:
-- If `type_name` in `import_map`: look up `dep_sigs[dep_path]`, check membership of `member_name_or_nil` (or `type_name` for type-only refs) → add to output
-- Otherwise discard
+1. If `type_name` in `import_map`: look up `dep_path = import_map[type_name]`
+2. Check `dep_sigs[dep_path]` contains `member_name_or_nil` (or `type_name` itself when `member_name_or_nil` is nil)
+3. If match: add the matched name to output `refs[dep_path]`
+4. If no match: discard silently
+
+Dedup per dep file: output arrays contain each name at most once.
 
 **Edge cases (per PRD):**
 - Overloaded methods: matched by name only; all overloads are candidates
@@ -151,7 +193,7 @@ For each candidate `(type_name, member_name_or_nil)`:
 |---|---|
 | `src/cli.rs` | Add `chain: Option<String>` to `GetArgs`; add `refs: Option<String>` to `GetArgs` |
 | `src/commands/get.rs` | Refactor mode validation; add `get_chain_count`, `get_chain_entry`, `get_refs` functions |
-| `src/refs.rs` | New — `RefsAnalyzer` trait + `get_refs_analyzer` dispatch |
+| `src/refs/mod.rs` | New — `RefsAnalyzer` trait + `get_refs_analyzer` dispatch |
 | `src/refs/java.rs` | New — `JavaRefsAnalyzer` tree-sitter walk |
 | `src/lib.rs` | Add `pub mod refs` |
 
