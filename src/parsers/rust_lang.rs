@@ -14,21 +14,26 @@ fn node_text<'a>(node: tree_sitter::Node, bytes: &'a [u8]) -> &'a str {
 }
 
 /// Check if the node has a preceding `///` line comment or `/**` block comment.
-fn has_doc_comment(node: tree_sitter::Node, bytes: &[u8]) -> bool {
+fn extract_doc_comment(node: tree_sitter::Node, bytes: &[u8]) -> Option<String> {
+    let mut comments: Vec<String> = Vec::new();
     let mut sibling = node.prev_sibling();
     while let Some(s) = sibling {
         match s.kind() {
             "line_comment" => {
                 let text = node_text(s, bytes);
                 if text.starts_with("///") {
-                    return true;
+                    comments.push(text.to_string());
+                    sibling = s.prev_sibling();
+                    continue;
                 }
-                // Non-doc comment — stop searching
                 break;
             }
             "block_comment" => {
                 let text = node_text(s, bytes);
-                return text.starts_with("/**");
+                if text.starts_with("/**") {
+                    return Some(text.to_string());
+                }
+                return None;
             }
             _ if s.is_extra() => {
                 sibling = s.prev_sibling();
@@ -37,7 +42,12 @@ fn has_doc_comment(node: tree_sitter::Node, bytes: &[u8]) -> bool {
             _ => break,
         }
     }
-    false
+    if comments.is_empty() {
+        None
+    } else {
+        comments.reverse();
+        Some(comments.join("\n"))
+    }
 }
 
 /// Check if a node has `pub` visibility by looking for visibility_modifier child.
@@ -125,7 +135,7 @@ impl<'a> Walker<'a> {
             None => return,
         };
 
-        let has_doc = has_doc_comment(node, self.bytes);
+        let doc = extract_doc_comment(node, self.bytes);
         let line = node.start_position().row + 1;
 
         self.result.signatures.push(Signature {
@@ -139,7 +149,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         });
     }
 
@@ -153,7 +164,7 @@ impl<'a> Walker<'a> {
             None => return,
         };
 
-        let has_doc = has_doc_comment(node, self.bytes);
+        let doc = extract_doc_comment(node, self.bytes);
         let line = node.start_position().row + 1;
 
         self.result.signatures.push(Signature {
@@ -167,7 +178,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         });
     }
 

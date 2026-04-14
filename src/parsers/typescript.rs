@@ -14,12 +14,14 @@ fn node_text<'a>(node: tree_sitter::Node, bytes: &'a [u8]) -> &'a str {
 }
 
 /// Check if preceding sibling is a JSDoc comment (`/** ... */`).
-fn preceding_jsdoc(node: tree_sitter::Node, source: &str) -> bool {
+fn extract_preceding_jsdoc(node: tree_sitter::Node, source: &str) -> Option<String> {
     let mut prev = node.prev_sibling();
     while let Some(p) = prev {
         match p.kind() {
             "comment" => {
-                return source.get(p.byte_range()).map_or(false, |s| s.starts_with("/**"));
+                return source.get(p.byte_range())
+                    .filter(|s| s.starts_with("/**"))
+                    .map(|s| s.to_string());
             }
             _ if p.is_extra() => {
                 prev = p.prev_sibling();
@@ -28,7 +30,7 @@ fn preceding_jsdoc(node: tree_sitter::Node, source: &str) -> bool {
             _ => break,
         }
     }
-    false
+    None
 }
 
 /// Extract the import source path from an import_statement node.
@@ -114,7 +116,7 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let line = node.start_position().row + 1;
-        let has_doc = preceding_jsdoc(node, self.source);
+        let doc = extract_preceding_jsdoc(node, self.source);
 
         let sig = Signature {
             kind: "class".to_string(),
@@ -127,7 +129,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
 
@@ -154,8 +157,9 @@ impl<'a> Walker<'a> {
 
         let line = node.start_position().row + 1;
         // Check JSDoc on the export statement (the parent) or on the class itself
-        let has_doc =
-            preceding_jsdoc(parent, self.source) || preceding_jsdoc(node, self.source);
+        let doc =
+            extract_preceding_jsdoc(parent, self.source)
+                .or_else(|| extract_preceding_jsdoc(node, self.source));
 
         let sig = Signature {
             kind: "class".to_string(),
@@ -168,7 +172,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
 
@@ -190,7 +195,7 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let line = node.start_position().row + 1;
-        let has_doc = preceding_jsdoc(node, self.source);
+        let doc = extract_preceding_jsdoc(node, self.source);
         let kind = if is_method { "method" } else { "function" };
 
         let sig = Signature {
@@ -204,7 +209,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
     }
@@ -221,8 +227,9 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let line = node.start_position().row + 1;
-        let has_doc =
-            preceding_jsdoc(parent, self.source) || preceding_jsdoc(node, self.source);
+        let doc =
+            extract_preceding_jsdoc(parent, self.source)
+                .or_else(|| extract_preceding_jsdoc(node, self.source));
         let kind = if is_method { "method" } else { "function" };
 
         let sig = Signature {
@@ -236,7 +243,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
     }
@@ -253,7 +261,7 @@ impl<'a> Walker<'a> {
         }
 
         let line = node.start_position().row + 1;
-        let has_doc = preceding_jsdoc(node, self.source);
+        let doc = extract_preceding_jsdoc(node, self.source);
 
         let sig = Signature {
             kind: "method".to_string(),
@@ -266,7 +274,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
     }

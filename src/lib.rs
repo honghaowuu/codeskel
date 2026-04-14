@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod docstring;
 pub mod cli;
 pub mod generated;
 pub mod graph;

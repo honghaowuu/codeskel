@@ -33,6 +33,7 @@ mod tests {
             project_root: "/tmp/proj".into(),
             detected_languages: vec!["java".into()],
             stats: Stats { total_files: 1, skipped_covered: 0, skipped_generated: 0, to_comment: 1 },
+            min_docstring_words: 0,
             order: vec!["src/Foo.java".into()],
             files: HashMap::new(),
         }

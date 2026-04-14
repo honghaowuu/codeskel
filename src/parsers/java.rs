@@ -12,13 +12,16 @@ fn node_text<'a>(node: tree_sitter::Node, bytes: &'a [u8]) -> &'a str {
     node.utf8_text(bytes).unwrap_or("")
 }
 
-/// Check if the previous non-whitespace sibling is a block_comment starting with /**
-fn has_javadoc(node: tree_sitter::Node, bytes: &[u8]) -> bool {
+/// Return the text of the preceding Javadoc block comment, or `None`.
+fn extract_javadoc(node: tree_sitter::Node, bytes: &[u8]) -> Option<String> {
     let mut sibling = node.prev_sibling();
     while let Some(s) = sibling {
         if s.kind() == "block_comment" {
             let text = node_text(s, bytes);
-            return text.starts_with("/**");
+            if text.starts_with("/**") {
+                return Some(text.to_string());
+            }
+            return None;
         } else if s.kind() == "line_comment" || s.is_extra() {
             sibling = s.prev_sibling();
             continue;
@@ -26,7 +29,7 @@ fn has_javadoc(node: tree_sitter::Node, bytes: &[u8]) -> bool {
             break;
         }
     }
-    false
+    None
 }
 
 /// Extract modifiers from a modifiers node or from direct children
@@ -198,7 +201,7 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let modifiers = extract_modifiers(node, self.bytes);
-        let has_doc = has_javadoc(node, self.bytes);
+        let doc = extract_javadoc(node, self.bytes);
         let line = node.start_position().row + 1;
 
         // Find extends (superclass)
@@ -252,7 +255,8 @@ impl<'a> Walker<'a> {
             implements,
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
 
@@ -272,7 +276,7 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let modifiers = extract_modifiers(node, self.bytes);
-        let has_doc = has_javadoc(node, self.bytes);
+        let doc = extract_javadoc(node, self.bytes);
         let line = node.start_position().row + 1;
 
         let sig = Signature {
@@ -286,7 +290,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
 
@@ -306,7 +311,7 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let modifiers = extract_modifiers(node, self.bytes);
-        let has_doc = has_javadoc(node, self.bytes);
+        let doc = extract_javadoc(node, self.bytes);
         let line = node.start_position().row + 1;
 
         let sig = Signature {
@@ -320,7 +325,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
 
@@ -349,7 +355,7 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let modifiers = extract_modifiers(node, self.bytes);
-        let has_doc = has_javadoc(node, self.bytes);
+        let doc = extract_javadoc(node, self.bytes);
         let line = node.start_position().row + 1;
 
         let sig = Signature {
@@ -363,7 +369,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
     }
@@ -380,7 +387,7 @@ impl<'a> Walker<'a> {
             .unwrap_or_default();
 
         let modifiers = extract_modifiers(node, self.bytes);
-        let has_doc = has_javadoc(node, self.bytes);
+        let doc = extract_javadoc(node, self.bytes);
         let line = node.start_position().row + 1;
 
         let sig = Signature {
@@ -394,7 +401,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
     }
@@ -411,7 +419,7 @@ impl<'a> Walker<'a> {
             .map(|n| node_text(n, self.bytes).to_string())
             .unwrap_or_default();
 
-        let has_doc = has_javadoc(node, self.bytes);
+        let doc = extract_javadoc(node, self.bytes);
         let line = node.start_position().row + 1;
 
         // Find variable_declarator children for names
@@ -438,7 +446,8 @@ impl<'a> Walker<'a> {
                     implements: Vec::new(),
                     annotations: Vec::new(),
                     line,
-                    has_docstring: has_doc,
+                    has_docstring: doc.is_some(),
+                    docstring_text: doc.clone(),
                 };
                 self.result.signatures.push(sig);
             }
@@ -573,6 +582,21 @@ public class User extends Entity implements Auditable {
             "coverage: {}",
             r.coverage
         );
+    }
+
+    #[test]
+    fn test_java_class_docstring_text_extracted() {
+        let r = JavaParser::new().parse(SAMPLE);
+        let cls = r.signatures.iter().find(|s| s.kind == "class").unwrap();
+        let text = cls.docstring_text.as_deref().expect("should have docstring_text");
+        assert!(text.contains("Represents a user"), "text: {:?}", text);
+    }
+
+    #[test]
+    fn test_java_method_without_doc_has_no_docstring_text() {
+        let r = JavaParser::new().parse(SAMPLE);
+        let m = r.signatures.iter().find(|s| s.name == "findByEmail").unwrap();
+        assert!(m.docstring_text.is_none(), "should be None, got: {:?}", m.docstring_text);
     }
 
     #[test]

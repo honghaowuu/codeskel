@@ -40,6 +40,10 @@ pub struct ScanArgs {
     #[arg(long, default_value = "0.8")]
     pub min_coverage: f64,
 
+    /// Minimum prose word count to consider a docstring adequate (0 = presence only)
+    #[arg(long, default_value = "10")]
+    pub min_docstring_words: usize,
+
     /// Where to write cache
     #[arg(long)]
     pub cache_dir: Option<std::path::PathBuf>,

@@ -43,6 +43,7 @@ Prints a small summary JSON to stdout and writes the full cache to `.codeskel/ca
     --include <GLOB>        Only include files matching glob (repeatable)
     --exclude <GLOB>        Exclude files matching glob (repeatable)
     --min-coverage <0-1>    Skip files above this docstring coverage [default: 0.8]
+    --min-docstring-words <N>  Min prose word count to treat a docstring as adequate (0 = presence only) [default: 10]
     --cache-dir <DIR>       Where to write cache [default: <project_root>/.codeskel]
 -v, --verbose               Print progress to stderr
 ```

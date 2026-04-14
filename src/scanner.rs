@@ -1,7 +1,8 @@
 use crate::cache::write_cache;
+use crate::docstring::count_prose_words;
 use crate::generated::is_generated;
 use crate::graph::DepGraph;
-use crate::models::{CacheFile, FileEntry, Language, Stats};
+use crate::models::{CacheFile, FileEntry, Language, Signature, Stats};
 use crate::parsers::get_parser;
 use crate::resolver::Resolver;
 use crate::walker::{walk_project, WalkConfig};
@@ -15,6 +16,8 @@ pub struct ScanConfig {
     pub include_globs: Vec<String>,
     pub exclude_globs: Vec<String>,
     pub min_coverage: f64,
+    /// Minimum prose word count for a docstring to count as documented (0 = presence only).
+    pub min_docstring_words: usize,
     pub cache_dir: Option<PathBuf>,
     pub verbose: bool,
 }
@@ -91,11 +94,12 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
                 (true, Some("generated".to_string()), 0.0, vec![], vec![], None)
             }
             Some((false, pr)) => {
-                let cov = pr.coverage;
+                let mut sigs = pr.signatures.clone();
+                let cov = apply_min_docstring_words(&mut sigs, cfg.min_docstring_words);
                 let skip = cfg.min_coverage > 0.0 && cov >= cfg.min_coverage;
                 if skip { skipped_covered += 1; }
                 let reason = if skip { Some("sufficient_coverage".to_string()) } else { None };
-                (skip, reason, cov, pr.signatures.clone(), pr.raw_imports.clone(), pr.package.clone())
+                (skip, reason, cov, sigs, pr.raw_imports.clone(), pr.package.clone())
             }
         };
 
@@ -165,6 +169,7 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
         project_root: root.to_string_lossy().into_owned(),
         detected_languages: detected_languages.clone(),
         stats: stats.clone(),
+        min_docstring_words: cfg.min_docstring_words,
         order: order.clone(),
         files: file_entries,
     };
@@ -184,6 +189,113 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
         order,
         project_root: root.to_string_lossy().into_owned(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Write a Java file with short docstrings, scan with min_docstring_words = 10,
+    /// and verify those short docs are treated as undocumented (has_docstring = false).
+    #[test]
+    fn test_min_docstring_words_excludes_trivial_docs() {
+        let dir = tempfile::tempdir().unwrap();
+        let java_file = dir.path().join("Foo.java");
+        fs::write(&java_file, r#"
+package com.example;
+
+/** Gets the foo. */
+public class Foo {
+    /** Returns value. */
+    public int getValue() { return 0; }
+}
+"#).unwrap();
+
+        let result = scan(dir.path(), &ScanConfig {
+            forced_lang: None,
+            include_globs: vec![],
+            exclude_globs: vec![],
+            min_coverage: 0.0,
+            min_docstring_words: 10,
+            cache_dir: Some(dir.path().join(".codeskel")),
+            verbose: false,
+        }).unwrap();
+
+        // Load the cache and check signatures
+        let cache_path = dir.path().join(".codeskel/cache.json");
+        let cache: crate::models::CacheFile =
+            serde_json::from_str(&fs::read_to_string(&cache_path).unwrap()).unwrap();
+        let entry = cache.files.values().next().unwrap();
+
+        // Both docstrings are < 10 words — must be treated as undocumented
+        for sig in &entry.signatures {
+            assert!(!sig.has_docstring,
+                "sig '{}' should have has_docstring=false (too short), got true", sig.name);
+        }
+        // Coverage must reflect that nothing is documented
+        assert_eq!(entry.comment_coverage, 0.0,
+            "coverage should be 0.0 when all docs are below word threshold");
+        // File should NOT be skipped (coverage 0.0 < min_coverage 0.0 threshold irrelevant, but it should appear in to_comment)
+        assert_eq!(result.stats.to_comment, 1);
+    }
+
+    /// With min_docstring_words = 0, presence-only behaviour is preserved.
+    #[test]
+    fn test_min_docstring_words_zero_preserves_presence_behaviour() {
+        let dir = tempfile::tempdir().unwrap();
+        let java_file = dir.path().join("Bar.java");
+        fs::write(&java_file, r#"
+package com.example;
+
+/** Gets the bar. */
+public class Bar {}
+"#).unwrap();
+
+        scan(dir.path(), &ScanConfig {
+            forced_lang: None,
+            include_globs: vec![],
+            exclude_globs: vec![],
+            min_coverage: 0.0,
+            min_docstring_words: 0,
+            cache_dir: Some(dir.path().join(".codeskel")),
+            verbose: false,
+        }).unwrap();
+
+        let cache_path = dir.path().join(".codeskel/cache.json");
+        let cache: crate::models::CacheFile =
+            serde_json::from_str(&fs::read_to_string(&cache_path).unwrap()).unwrap();
+        let entry = cache.files.values().next().unwrap();
+        let cls = entry.signatures.iter().find(|s| s.kind == "class").unwrap();
+        assert!(cls.has_docstring, "with min_docstring_words=0, any doc counts");
+    }
+}
+
+/// Re-evaluate `has_docstring` on each signature based on prose word count,
+/// then recompute coverage.  A `min_words` of 0 is a no-op.
+pub fn apply_min_docstring_words(signatures: &mut Vec<Signature>, min_words: usize) -> f64 {
+    if min_words > 0 {
+        for sig in signatures.iter_mut() {
+            if sig.has_docstring {
+                let words = sig.docstring_text.as_deref()
+                    .map(count_prose_words)
+                    .unwrap_or(0);
+                if words < min_words {
+                    sig.has_docstring = false;
+                }
+            }
+        }
+    }
+
+    // Recompute coverage
+    let documentable: Vec<&Signature> = signatures.iter()
+        .filter(|s| matches!(s.kind.as_str(),
+            "class" | "interface" | "enum" | "method" | "constructor" | "field" |
+            "function" | "struct" | "trait" | "type" | "type_alias"))
+        .collect();
+    let documented = documentable.iter().filter(|s| s.has_docstring).count();
+    let total = documentable.len();
+    if total > 0 { documented as f64 / total as f64 } else { 1.0 }
 }
 
 fn read_go_module(root: &Path) -> Option<String> {

@@ -3,6 +3,7 @@ use crate::cli::RescanArgs;
 use crate::generated::is_generated;
 use crate::lang::detect_language;
 use crate::parsers::get_parser;
+use crate::scanner::apply_min_docstring_words;
 use chrono::Utc;
 use std::path::Path;
 
@@ -49,8 +50,10 @@ pub fn run(args: RescanArgs) -> anyhow::Result<bool> {
         let pr = get_parser(&lang).parse(&content);
 
         if let Some(entry) = cache.files.get_mut(&rel) {
-            entry.comment_coverage = pr.coverage;
-            entry.signatures = pr.signatures;
+            let mut sigs = pr.signatures;
+            let cov = apply_min_docstring_words(&mut sigs, cache.min_docstring_words);
+            entry.comment_coverage = cov;
+            entry.signatures = sigs;
             entry.scanned_at = Some(Utc::now().to_rfc3339());
             if generated {
                 entry.skip = true;

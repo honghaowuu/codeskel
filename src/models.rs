@@ -76,6 +76,8 @@ pub struct Signature {
     pub annotations: Vec<String>,
     pub line: usize,
     pub has_docstring: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docstring_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +112,8 @@ pub struct CacheFile {
     pub project_root: String,
     pub detected_languages: Vec<String>,
     pub stats: Stats,
+    #[serde(default)]
+    pub min_docstring_words: usize,
     pub order: Vec<String>,           // relative paths in topo order (non-skipped only)
     pub files: HashMap<String, FileEntry>,
 }
@@ -140,6 +144,7 @@ mod tests {
             annotations: vec![],
             line: 34,
             has_docstring: false,
+            docstring_text: None,
         };
         let json = serde_json::to_string(&sig).unwrap();
         let back: Signature = serde_json::from_str(&json).unwrap();

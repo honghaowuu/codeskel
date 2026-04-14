@@ -13,7 +13,7 @@ fn test_get_command_by_index() {
         forced_lang: None,
         include_globs: vec![],
         exclude_globs: vec![],
-        min_coverage: 0.0,
+        min_coverage: 0.0, min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),
         verbose: false,
     }).unwrap();
@@ -40,7 +40,7 @@ fn test_get_deps_command() {
         forced_lang: None,
         include_globs: vec![],
         exclude_globs: vec![],
-        min_coverage: 0.0,
+        min_coverage: 0.0, min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),
         verbose: false,
     }).unwrap();
@@ -72,7 +72,7 @@ fn test_rescan_updates_coverage() {
         forced_lang: None,
         include_globs: vec![],
         exclude_globs: vec![],
-        min_coverage: 0.0,
+        min_coverage: 0.0, min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),
         verbose: false,
     }).unwrap();
@@ -109,7 +109,7 @@ fn test_scan_java_fixture() {
             forced_lang: None,
             include_globs: vec![],
             exclude_globs: vec![],
-            min_coverage: 0.8,
+            min_coverage: 0.8, min_docstring_words: 0,
             cache_dir: Some(tmp.path().to_path_buf()),
             verbose: false,
         },
@@ -147,7 +147,7 @@ fn test_scan_python_fixture() {
         forced_lang: None,
         include_globs: vec![],
         exclude_globs: vec![],
-        min_coverage: 0.8,
+        min_coverage: 0.8, min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),
         verbose: false,
     }).unwrap();
@@ -174,6 +174,7 @@ fn test_scan_writes_cache() {
             include_globs: vec![],
             exclude_globs: vec![],
             min_coverage: 0.0, // include all files
+            min_docstring_words: 0,
             cache_dir: Some(tmp.path().to_path_buf()),
             verbose: false,
         },
@@ -207,7 +208,7 @@ fn test_chain_count_for_userservice() {
         forced_lang: None,
         include_globs: vec![],
         exclude_globs: vec![],
-        min_coverage: 0.0,
+        min_coverage: 0.0, min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),
         verbose: false,
     }).unwrap();
@@ -243,7 +244,7 @@ fn test_chain_count_zero_for_leaf() {
         forced_lang: None,
         include_globs: vec![],
         exclude_globs: vec![],
-        min_coverage: 0.0,
+        min_coverage: 0.0, min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),
         verbose: false,
     }).unwrap();
@@ -271,7 +272,7 @@ fn test_refs_for_userservice() {
         forced_lang: None,
         include_globs: vec![],
         exclude_globs: vec![],
-        min_coverage: 0.0,
+        min_coverage: 0.0, min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),
         verbose: false,
     }).unwrap();

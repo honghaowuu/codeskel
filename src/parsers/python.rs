@@ -14,21 +14,35 @@ fn node_text<'a>(node: tree_sitter::Node, bytes: &'a [u8]) -> &'a str {
 }
 
 /// Check if the first body statement is a docstring (expression_statement containing a string).
-fn first_body_is_docstring(body: tree_sitter::Node, _bytes: &[u8]) -> bool {
+fn extract_body_docstring(body: tree_sitter::Node, bytes: &[u8]) -> Option<String> {
     let mut cursor = body.walk();
     for child in body.children(&mut cursor) {
         match child.kind() {
             "expression_statement" => {
                 if let Some(inner) = child.child(0) {
-                    return inner.kind() == "string";
+                    if inner.kind() == "string" {
+                        let raw = inner.utf8_text(bytes).unwrap_or("");
+                        // Strip surrounding triple-quotes or single-quotes
+                        let text = raw
+                            .trim_start_matches("\"\"\"")
+                            .trim_end_matches("\"\"\"")
+                            .trim_start_matches("'''")
+                            .trim_end_matches("'''")
+                            .trim_start_matches('"')
+                            .trim_end_matches('"')
+                            .trim_start_matches('\'')
+                            .trim_end_matches('\'')
+                            .trim();
+                        return Some(text.to_string());
+                    }
                 }
-                return false;
+                return None;
             }
             "comment" | "\n" => continue,
-            _ => return false,
+            _ => return None,
         }
     }
-    false
+    None
 }
 
 struct Walker<'a> {
@@ -104,10 +118,9 @@ impl<'a> Walker<'a> {
 
         let line = node.start_position().row + 1;
 
-        let has_doc = node
+        let doc = node
             .child_by_field_name("body")
-            .map(|body| first_body_is_docstring(body, self.bytes))
-            .unwrap_or(false);
+            .and_then(|body| extract_body_docstring(body, self.bytes));
 
         let sig = Signature {
             kind: "class".to_string(),
@@ -120,7 +133,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
 
@@ -152,10 +166,9 @@ impl<'a> Walker<'a> {
 
         let line = node.start_position().row + 1;
 
-        let has_doc = node
+        let doc = node
             .child_by_field_name("body")
-            .map(|body| first_body_is_docstring(body, self.bytes))
-            .unwrap_or(false);
+            .and_then(|body| extract_body_docstring(body, self.bytes));
 
         let return_type = node
             .child_by_field_name("return_type")
@@ -180,7 +193,8 @@ impl<'a> Walker<'a> {
             implements: Vec::new(),
             annotations: Vec::new(),
             line,
-            has_docstring: has_doc,
+            has_docstring: doc.is_some(),
+            docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
     }

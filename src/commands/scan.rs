@@ -23,6 +23,7 @@ pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
             include_globs: args.include,
             exclude_globs: args.exclude,
             min_coverage: args.min_coverage,
+            min_docstring_words: args.min_docstring_words,
             cache_dir: args.cache_dir,
             verbose: args.verbose,
         },
