@@ -22,8 +22,8 @@ pub fn run(args: GetArgs) -> anyhow::Result<bool> {
 
     // --refs
     if let Some(refs_path) = &args.refs {
-        if args.index.is_some() || args.path.is_some() || args.deps.is_some() {
-            anyhow::bail!("--refs cannot be combined with --index, --path, or --deps");
+        if args.chain.is_some() || args.index.is_some() || args.path.is_some() || args.deps.is_some() {
+            anyhow::bail!("--refs cannot be combined with --chain, --index, --path, or --deps");
         }
         return get_refs(&cache, refs_path);
     }
@@ -165,6 +165,9 @@ pub fn compute_refs(
             import_map.insert(stem.to_string(), dep_path.clone());
         }
     }
+
+    // NOTE: file_stem-as-simple-name works for Java (filename == class name convention).
+    // For other languages, this assumption may not hold.
 
     // Build dep_sigs: dep_file_path → [all sig names regardless of kind]
     let mut dep_sigs = std::collections::HashMap::new();
