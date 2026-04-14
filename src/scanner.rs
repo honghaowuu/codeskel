@@ -133,8 +133,13 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
     let (full_order, cycle_pairs) = graph.topo_sort();
 
     // Mark files involved in cycles
-    for (a, b) in &cycle_pairs {
-        eprintln!("[codeskel] Warning: cycle between {} and {}", a, b);
+    const MAX_CYCLE_SHOWN: usize = 3;
+    for (i, (a, b)) in cycle_pairs.iter().enumerate() {
+        if i < MAX_CYCLE_SHOWN {
+            eprintln!("[codeskel] Warning: cycle between {} and {}", a, b);
+        } else if i == MAX_CYCLE_SHOWN {
+            eprintln!("[codeskel] Warning: ... and {} more cycle(s)", cycle_pairs.len() - MAX_CYCLE_SHOWN);
+        }
         if let Some(e) = file_entries.get_mut(a) { e.cycle_warning = true; }
         if let Some(e) = file_entries.get_mut(b) { e.cycle_warning = true; }
     }
