@@ -60,6 +60,15 @@ codeskel get .codeskel/cache.json --path src/main/java/com/example/model/User.ja
 
 # Signatures of direct dependencies (LLM context before commenting a file)
 codeskel get .codeskel/cache.json --deps src/main/java/com/example/model/User.java
+
+# Count of files in the transitive dependency chain (deepest dep first)
+codeskel get .codeskel/cache.json --chain src/main/java/com/example/service/UserService.java
+
+# Fetch one dep by position in the chain (0-based)
+codeskel get .codeskel/cache.json --chain src/main/java/com/example/service/UserService.java --index 0
+
+# Symbol references from a file's body to its internal deps (Java only)
+codeskel get .codeskel/cache.json --refs src/main/java/com/example/service/UserService.java
 ```
 
 `--index` and `--path` return the full file entry:
@@ -107,6 +116,28 @@ codeskel get .codeskel/cache.json --deps src/main/java/com/example/model/User.ja
 `annotations` uses `{name, value}` format — `value` is the unnamed argument for
 annotations like `@RequestMapping("/users")`, or `null` for markers or named-only
 arguments. `docstring_text` is present when `has_docstring` is true.
+
+`--chain` returns the count of files in a file's transitive dependency chain (deepest dep first, topo order):
+
+```json
+{ "for": "src/main/java/com/example/service/UserService.java", "count": 3 }
+```
+
+`--chain --index <i>` returns the full `FileEntry` for the i-th dep in that chain — identical format to `--index`. Index out of range → exit code 1.
+
+`--refs` performs static analysis on the file's body and returns, for each internal dep, the symbol names actually referenced there (Java only; other languages emit `{ "for": ..., "refs": {} }`):
+
+```json
+{
+  "for": "src/main/java/com/example/service/UserService.java",
+  "refs": {
+    "src/main/java/com/example/model/User.java": ["User", "getEmail"],
+    "src/main/java/com/example/repo/UserRepository.java": ["UserRepository", "findById", "save"]
+  }
+}
+```
+
+Keys are relative paths of internal dep files. Values are symbol names (class, method, field, constructor) that appear in the dep's cached signatures and are actually used in the analyzed file. External/stdlib references are silently ignored.
 
 `--deps` returns signature summaries of all direct dependencies — what the LLM loads as context before commenting a file:
 
@@ -162,6 +193,8 @@ Reads `pom.xml` directly — no cache needed. Outputs compact JSON:
 
 ## How the `comment` skill uses codeskel
 
+**Project mode** — comment all files in topo order:
+
 ```
 1. codeskel scan <project>          → { cache, stats.to_comment = N }
 2. For i = 0..N-1:
@@ -173,7 +206,26 @@ Reads `pom.xml` directly — no cache needed. Outputs compact JSON:
    f. codeskel rescan <cache> <path>         → update cache
 ```
 
-The LLM context at any step contains: one summary + one file's details + its deps' signatures + the source. No large arrays, constant memory regardless of project size.
+**Targeted single-file mode** — comment one file and its transitive dep chain, touching only the symbols actually referenced:
+
+```
+1. codeskel scan <project>
+2. codeskel get <cache> --chain <target>     → { count: N }
+   If N = 0: skip to step 5.
+3. Build refs_map upfront (one --refs call per chain file + target):
+   codeskel get <cache> --refs <file>        → accumulate refs_map per dep
+4. For i = 0..N-1:
+   a. codeskel get <cache> --chain <target> --index i  → dep entry
+   b. codeskel get <cache> --deps <dep_path>           → dep's dep signatures
+   c. Read dep source; comment only items where has_docstring: false
+      AND name ∈ refs_map[dep_path]
+   d. codeskel rescan <cache> <dep_path>
+5. Comment target file in full (all undocumented items):
+   codeskel get <cache> --deps <target>      → context
+   Read + comment target; codeskel rescan <cache> <target>
+```
+
+Both modes keep LLM context constant — at most one file entry + its deps' signatures + source at any point, regardless of project or chain size.
 
 ## How the `generate-microservice-skill` uses codeskel
 
