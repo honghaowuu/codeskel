@@ -65,6 +65,14 @@ pub struct GetArgs {
     /// Return signature summaries of direct dependencies of FILE (relative to project root)
     #[arg(long, value_name = "FILE")]
     pub deps: Option<String>,
+
+    /// Return transitive dep chain count, or with --index fetch one dep entry
+    #[arg(long, value_name = "FILE")]
+    pub chain: Option<String>,
+
+    /// Return symbol references from FILE's body to its internal deps (Java only)
+    #[arg(long, value_name = "FILE")]
+    pub refs: Option<String>,
 }
 
 #[derive(Args, Debug)]
