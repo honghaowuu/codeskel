@@ -194,3 +194,67 @@ fn test_scan_writes_cache() {
         assert!(b < s, "Base must come before Service; order: {:?}", cache.order);
     }
 }
+
+#[test]
+fn test_chain_count_for_userservice() {
+    use codeskel::cache::read_cache;
+
+    let tmp = tempdir().unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_refs_project");
+
+    codeskel::scanner::scan(&root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache = read_cache(&tmp.path().join("cache.json")).unwrap();
+
+    let svc_path = cache.files.keys()
+        .find(|p| p.contains("UserService"))
+        .cloned()
+        .expect("UserService must be in cache");
+
+    // NOTE: skipped files are excluded from cache.order and therefore chain result.
+    // min_coverage=0.0 ensures all files are included.
+    let chain = codeskel::commands::get::chain_order(&cache, &svc_path).unwrap();
+    assert_eq!(chain.len(), 2, "UserService has 2 transitive deps; got: {:?}", chain);
+
+    // Leaves-first: User.java (no deps) at index 0, UserRepository.java at index 1
+    assert!(chain[0].contains("User") && !chain[0].contains("UserRepository"),
+        "index 0 should be User.java (leaf, no deps), got: {}", chain[0]);
+    assert!(chain[1].contains("UserRepository"),
+        "index 1 should be UserRepository.java, got: {}", chain[1]);
+}
+
+#[test]
+fn test_chain_count_zero_for_leaf() {
+    use codeskel::cache::read_cache;
+
+    let tmp = tempdir().unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_refs_project");
+
+    codeskel::scanner::scan(&root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache = read_cache(&tmp.path().join("cache.json")).unwrap();
+
+    let user_path = cache.files.keys()
+        .find(|p| p.ends_with("User.java"))
+        .cloned()
+        .expect("User.java must be in cache");
+
+    let chain = codeskel::commands::get::chain_order(&cache, &user_path).unwrap();
+    assert_eq!(chain.len(), 0, "User.java has no deps");
+}
