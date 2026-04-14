@@ -1,7 +1,9 @@
 use crate::cache::read_cache;
 use crate::cli::GetArgs;
+use crate::models::Language;
 use serde_json::json;
 use std::collections::{HashSet, VecDeque};
+use std::str::FromStr;
 
 pub fn run(args: GetArgs) -> anyhow::Result<bool> {
     let cache = read_cache(&args.cache_path)?;
@@ -143,6 +145,65 @@ fn get_deps(cache: &crate::models::CacheFile, file_path: &str) -> anyhow::Result
     Ok(false)
 }
 
-fn get_refs(_cache: &crate::models::CacheFile, _file_path: &str) -> anyhow::Result<bool> {
-    anyhow::bail!("--refs not yet implemented")
+/// Builds the refs map for `file_path`: dep_file_path → [symbol names referenced].
+/// Returns an error if the file is not in cache or its source cannot be read.
+pub fn compute_refs(
+    cache: &crate::models::CacheFile,
+    file_path: &str,
+) -> anyhow::Result<std::collections::HashMap<String, Vec<String>>> {
+    let entry = cache.files.get(file_path)
+        .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in cache", file_path))?;
+
+    // Build import_map: simple_name → dep_file_path
+    // simple_name = filename stem (strip .java / .py / etc.)
+    let mut import_map = std::collections::HashMap::new();
+    for dep_path in &entry.internal_imports {
+        if let Some(stem) = std::path::Path::new(dep_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+        {
+            import_map.insert(stem.to_string(), dep_path.clone());
+        }
+    }
+
+    // Build dep_sigs: dep_file_path → [all sig names regardless of kind]
+    let mut dep_sigs = std::collections::HashMap::new();
+    for dep_path in &entry.internal_imports {
+        if let Some(dep_entry) = cache.files.get(dep_path) {
+            let names: Vec<String> = dep_entry.signatures.iter()
+                .map(|s| s.name.clone())
+                .collect();
+            dep_sigs.insert(dep_path.clone(), names);
+        }
+    }
+
+    // No internal imports → empty refs
+    if import_map.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    // Read source from disk
+    let source_path = std::path::Path::new(&cache.project_root).join(file_path);
+    let source = std::fs::read_to_string(&source_path)
+        .map_err(|e| anyhow::anyhow!("Cannot read '{}': {}", source_path.display(), e))?;
+
+    // Dispatch to language-specific analyzer
+    let lang = Language::from_str(&entry.language)
+        .map_err(|e| anyhow::anyhow!("Unknown language '{}': {}", entry.language, e))?;
+
+    match crate::refs::get_refs_analyzer(&lang) {
+        Some(analyzer) => Ok(analyzer.extract_refs(&source, &import_map, &dep_sigs)),
+        None => {
+            eprintln!("[codeskel] --refs: language '{}' not yet supported; returning empty refs",
+                entry.language);
+            Ok(std::collections::HashMap::new())
+        }
+    }
+}
+
+fn get_refs(cache: &crate::models::CacheFile, file_path: &str) -> anyhow::Result<bool> {
+    let refs = compute_refs(cache, file_path)?;
+    let output = json!({ "for": file_path, "refs": refs });
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(false)
 }

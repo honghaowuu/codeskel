@@ -258,3 +258,49 @@ fn test_chain_count_zero_for_leaf() {
     let chain = codeskel::commands::get::chain_order(&cache, &user_path).unwrap();
     assert_eq!(chain.len(), 0, "User.java has no deps");
 }
+
+#[test]
+fn test_refs_for_userservice() {
+    use codeskel::cache::read_cache;
+
+    let tmp = tempdir().unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_refs_project");
+
+    codeskel::scanner::scan(&root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache_path = tmp.path().join("cache.json");
+    let cache = read_cache(&cache_path).unwrap();
+
+    let svc_path = cache.files.keys()
+        .find(|p| p.contains("UserService"))
+        .cloned()
+        .expect("UserService must be in cache");
+
+    let refs = codeskel::commands::get::compute_refs(&cache, &svc_path).unwrap();
+
+    let user_path = cache.files.keys()
+        .find(|p| p.ends_with("User.java"))
+        .cloned()
+        .expect("User.java must be in cache");
+    let repo_path = cache.files.keys()
+        .find(|p| p.contains("UserRepository"))
+        .cloned()
+        .expect("UserRepository.java must be in cache");
+
+    let user_refs = refs.get(&user_path).expect("User.java must appear in refs");
+    assert!(user_refs.contains(&"User".to_string()), "User type ref missing");
+    assert!(user_refs.contains(&"getEmail".to_string()), "getEmail missing");
+
+    let repo_refs = refs.get(&repo_path).expect("UserRepository.java must appear in refs");
+    assert!(repo_refs.contains(&"UserRepository".to_string()), "UserRepository type ref missing");
+    assert!(repo_refs.contains(&"findById".to_string()), "findById missing");
+    assert!(repo_refs.contains(&"save".to_string()), "save missing");
+}
