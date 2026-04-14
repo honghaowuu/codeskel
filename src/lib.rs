@@ -5,6 +5,7 @@ pub mod graph;
 pub mod lang;
 pub mod models;
 pub mod parsers;
+pub mod refs;
 pub mod resolver;
 pub mod scanner;
 pub mod walker;
