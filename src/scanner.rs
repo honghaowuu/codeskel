@@ -1,5 +1,4 @@
 use crate::cache::write_cache;
-use crate::session::delete_session;
 use crate::docstring::count_prose_words;
 use crate::generated::is_generated;
 use crate::graph::DepGraph;
@@ -176,7 +175,6 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
     };
 
     write_cache(&cache_dir, &cache)?;
-    delete_session(&cache_dir);
     let cache_path = cache_dir.join("cache.json");
 
     if cfg.verbose {

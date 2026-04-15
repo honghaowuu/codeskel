@@ -2,6 +2,7 @@ use crate::cli::ScanArgs;
 use crate::lang::lang_from_str;
 use crate::models::ScanSummary;
 use crate::scanner::{scan, ScanConfig};
+use crate::session::delete_session;
 
 pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
     // Validate --lang if provided
@@ -28,6 +29,10 @@ pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
             verbose: args.verbose,
         },
     )?;
+
+    if let Some(cache_dir) = result.cache_path.parent() {
+        delete_session(cache_dir);
+    }
 
     let summary = ScanSummary {
         project_root: result.project_root,

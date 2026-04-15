@@ -393,7 +393,7 @@ fn test_next_advance_rescans_and_returns_next() {
     std::thread::sleep(std::time::Duration::from_millis(10)); // ensure timestamp advances
     let args1 = codeskel::cli::NextArgs { cache: cache_path.clone() };
     let out1 = codeskel::commands::next::run_and_capture(args1).unwrap();
-    assert!(!out1.done || out1.index == Some(1), "second call should advance or reach done");
+    assert_eq!(out1.index, Some(1), "second call must return index 1");
 
     let scanned_after = {
         let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -465,11 +465,12 @@ fn test_scan_deletes_session() {
     codeskel::commands::next::run_and_capture(args).unwrap();
     assert!(tmp.path().join("session.json").exists(), "session must exist after next");
 
-    // Second scan must delete session.json
-    codeskel::scanner::scan(&fixture_root, &codeskel::scanner::ScanConfig {
-        forced_lang: None,
-        include_globs: vec![],
-        exclude_globs: vec![],
+    // Second scan via the command layer must delete session.json
+    codeskel::commands::scan::run(codeskel::cli::ScanArgs {
+        project_root: fixture_root.clone(),
+        lang: None,
+        include: vec![],
+        exclude: vec![],
         min_coverage: 0.0,
         min_docstring_words: 0,
         cache_dir: Some(tmp.path().to_path_buf()),

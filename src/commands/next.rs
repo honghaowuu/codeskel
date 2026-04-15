@@ -1,10 +1,15 @@
 use crate::cache::{read_cache, write_cache};
 use crate::cli::NextArgs;
 use crate::commands::rescan::{rescan_one, recompute_stats};
-use crate::models::FileEntry;
+use crate::models::{FileEntry, Signature};
 use crate::session::{delete_session, read_session, write_session, Session};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DepEntry {
+    pub path: String,
+    pub signatures: Vec<Signature>,
+}
 
 /// The structured output from a `next` call. Used both for JSON printing and for
 /// test assertions (via `run_and_capture`).
@@ -14,7 +19,7 @@ pub struct NextOutput {
     pub index: Option<usize>,
     pub remaining: usize,
     pub file: Option<FileEntry>,
-    pub deps: Vec<serde_json::Value>,
+    pub deps: Vec<DepEntry>,
 }
 
 pub fn run(args: NextArgs) -> anyhow::Result<bool> {
@@ -34,20 +39,25 @@ pub fn run_and_capture(args: NextArgs) -> anyhow::Result<NextOutput> {
 
     // ── Step 1: rescan previous file if session is active ──────────────────
     if session.cursor >= 0 {
-        let prev_file = session.current_file.as_deref().unwrap_or("");
+        match session.current_file.as_deref() {
+            None => {
+                eprintln!("[codeskel] Warning: session has active cursor but no current_file; skipping rescan.");
+            }
+            Some(prev_file) => {
+                // Sanity check: warn if session drifted from cache.order
+                let expected = cache.order.get(session.cursor as usize).map(|s| s.as_str());
+                if expected != Some(prev_file) {
+                    eprintln!(
+                        "[codeskel] Warning: session mismatch — expected {:?}, found {:?}. Rescanning session file.",
+                        expected, prev_file
+                    );
+                }
 
-        // Sanity check: warn if session drifted from cache.order
-        let expected = cache.order.get(session.cursor as usize).map(|s| s.as_str());
-        if expected != Some(prev_file) {
-            eprintln!(
-                "[codeskel] Warning: session mismatch — expected {:?}, found {:?}. Rescanning session file.",
-                expected, prev_file
-            );
+                rescan_one(&mut cache, prev_file);
+                recompute_stats(&mut cache);
+                write_cache(&cache_dir, &cache)?;
+            }
         }
-
-        rescan_one(&mut cache, prev_file);
-        recompute_stats(&mut cache);
-        write_cache(&cache_dir, &cache)?;
     }
 
     // ── Step 2: advance cursor ─────────────────────────────────────────────
@@ -75,13 +85,11 @@ pub fn run_and_capture(args: NextArgs) -> anyhow::Result<NextOutput> {
         .ok_or_else(|| anyhow::anyhow!("File {} in order but missing from files map", rel))?
         .clone();
 
-    let deps: Vec<serde_json::Value> = file_entry.internal_imports.iter()
+    let deps: Vec<DepEntry> = file_entry.internal_imports.iter()
         .filter_map(|dep| {
-            cache.files.get(dep).map(|dep_entry| {
-                json!({
-                    "path": dep_entry.path,
-                    "signatures": dep_entry.signatures,
-                })
+            cache.files.get(dep).map(|dep_entry| DepEntry {
+                path: dep_entry.path.clone(),
+                signatures: dep_entry.signatures.clone(),
             })
         })
         .collect();

@@ -11,7 +11,10 @@ use std::path::Path;
 /// Re-parse a single file and update its cache entry.
 /// Returns `true` if a warning was emitted (file unreadable / language unknown / not in cache).
 ///
-/// Updates: `comment_coverage`, `signatures`, `scanned_at`, `skip`/`skip_reason` (generated files only).
+/// Updates: `comment_coverage`, `signatures`, `scanned_at`, `skip`, `skip_reason`.
+/// - Generated files: sets `skip = true, skip_reason = "generated"`.
+/// - Non-generated files: clears `skip = false, skip_reason = None`. Coverage-based skip is NOT
+///   reapplied because `min_coverage` is not stored in the cache; run a full `scan` to re-establish it.
 /// Does NOT update: `internal_imports`, `package`, `language`, `cycle_warning`.
 /// Does NOT recompute stats or write cache — callers must do that.
 pub fn rescan_one(cache: &mut CacheFile, rel: &str) -> bool {
@@ -46,6 +49,9 @@ pub fn rescan_one(cache: &mut CacheFile, rel: &str) -> bool {
         if generated {
             entry.skip = true;
             entry.skip_reason = Some("generated".to_string());
+        } else {
+            entry.skip = false;
+            entry.skip_reason = None;
         }
     } else {
         eprintln!("[codeskel] Warning: {} not found in cache, skipping", rel);
