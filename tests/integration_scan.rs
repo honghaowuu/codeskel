@@ -442,3 +442,40 @@ fn test_next_done_after_last_file() {
     assert!(done_output.file.is_none());
     assert_eq!(done_output.remaining, 0);
 }
+
+#[test]
+fn test_scan_deletes_session() {
+    let tmp = tempdir().unwrap();
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_project");
+
+    // First scan + bootstrap to create session.json
+    codeskel::scanner::scan(&fixture_root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache_path = tmp.path().join("cache.json");
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    codeskel::commands::next::run_and_capture(args).unwrap();
+    assert!(tmp.path().join("session.json").exists(), "session must exist after next");
+
+    // Second scan must delete session.json
+    codeskel::scanner::scan(&fixture_root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    assert!(!tmp.path().join("session.json").exists(),
+        "session.json must be deleted by scan");
+}
