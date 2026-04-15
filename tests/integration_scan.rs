@@ -305,3 +305,140 @@ fn test_refs_for_userservice() {
     assert!(repo_refs.contains(&"findById".to_string()), "findById missing");
     assert!(repo_refs.contains(&"save".to_string()), "save missing");
 }
+
+// ── codeskel next tests ──────────────────────────────────────────────
+
+fn make_cache_in(fixture: &str, tmp: &std::path::Path) {
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(fixture);
+    codeskel::scanner::scan(&fixture_root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.to_path_buf()),
+        verbose: false,
+    }).unwrap();
+}
+
+#[test]
+fn test_next_bootstrap_returns_index_0() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_project", tmp.path());
+
+    let cache_path = tmp.path().join("cache.json");
+    // No session.json yet
+    assert!(!tmp.path().join("session.json").exists());
+
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let output = codeskel::commands::next::run_and_capture(args).unwrap();
+
+    assert!(!output.done, "bootstrap should not be done");
+    assert_eq!(output.index, Some(0), "bootstrap returns index 0");
+    assert!(output.file.is_some(), "file must be present");
+    assert!(tmp.path().join("session.json").exists(), "session.json must be created");
+
+    let session = codeskel::session::read_session(tmp.path());
+    assert_eq!(session.cursor, 0);
+}
+
+#[test]
+fn test_next_empty_cache_returns_done() {
+    use codeskel::models::{CacheFile, Stats};
+    use std::collections::HashMap;
+
+    let tmp = tempdir().unwrap();
+    let cache = CacheFile {
+        version: 1,
+        scanned_at: "2026-01-01T00:00:00Z".into(),
+        project_root: tmp.path().to_string_lossy().into_owned(),
+        detected_languages: vec![],
+        stats: Stats { total_files: 0, skipped_covered: 0, skipped_generated: 0, to_comment: 0 },
+        min_docstring_words: 0,
+        order: vec![],
+        files: HashMap::new(),
+    };
+    codeskel::cache::write_cache(tmp.path(), &cache).unwrap();
+
+    let args = codeskel::cli::NextArgs { cache: tmp.path().join("cache.json") };
+    let output = codeskel::commands::next::run_and_capture(args).unwrap();
+
+    assert!(output.done, "empty cache → done immediately");
+    assert_eq!(output.index, None);
+    assert!(output.file.is_none());
+    assert!(output.deps.is_empty());
+}
+
+#[test]
+fn test_next_advance_rescans_and_returns_next() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    // Bootstrap: index 0
+    let args0 = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let out0 = codeskel::commands::next::run_and_capture(args0).unwrap();
+    assert!(!out0.done);
+    assert_eq!(out0.index, Some(0));
+
+    let scanned_before = {
+        let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+        let rel = &cache.order[0];
+        cache.files[rel].scanned_at.clone()
+    };
+
+    // Advance: index 1 — should rescan index 0
+    std::thread::sleep(std::time::Duration::from_millis(10)); // ensure timestamp advances
+    let args1 = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let out1 = codeskel::commands::next::run_and_capture(args1).unwrap();
+    assert!(!out1.done || out1.index == Some(1), "second call should advance or reach done");
+
+    let scanned_after = {
+        let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+        let rel = &cache.order[0];
+        cache.files[rel].scanned_at.clone()
+    };
+
+    assert_ne!(scanned_before, scanned_after,
+        "rescan should have updated scanned_at of index-0 file");
+}
+
+#[test]
+fn test_next_done_after_last_file() {
+    let tmp = tempdir().unwrap();
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_project");
+
+    codeskel::scanner::scan(&fixture_root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache_path = tmp.path().join("cache.json");
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    let n = cache.order.len();
+
+    // Bootstrap
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    codeskel::commands::next::run_and_capture(args).unwrap();
+
+    // Advance past all remaining files
+    let mut last_output = None;
+    for _ in 0..n {
+        let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+        last_output = Some(codeskel::commands::next::run_and_capture(args).unwrap());
+    }
+
+    let done_output = last_output.unwrap();
+    assert!(done_output.done, "after n advances past n files, must be done");
+    assert_eq!(done_output.index, None);
+    assert!(done_output.file.is_none());
+    assert_eq!(done_output.remaining, 0);
+}
