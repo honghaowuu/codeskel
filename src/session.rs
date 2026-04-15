@@ -1,17 +1,31 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct Session {
     pub cursor: i64,  // -1 = not started / complete
     pub current_file: Option<String>,
 }
 
+impl Default for Session {
+    fn default() -> Self {
+        Session { cursor: -1, current_file: None }
+    }
+}
+
 pub fn read_session(cache_dir: &Path) -> Session {
     let path = cache_dir.join("session.json");
     match std::fs::read_to_string(&path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => Session { cursor: -1, current_file: None },
+        Ok(content) => {
+            match serde_json::from_str(&content) {
+                Ok(session) => session,
+                Err(_) => {
+                    eprintln!("[codeskel] Warning: corrupt session.json, resetting");
+                    Session::default()
+                }
+            }
+        }
+        Err(_) => Session::default(),
     }
 }
 
