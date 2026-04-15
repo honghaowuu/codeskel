@@ -9,7 +9,10 @@ use chrono::Utc;
 use std::path::Path;
 
 /// Re-parse a single file and update its cache entry.
-/// Returns `true` if a warning was emitted (file unreadable / language unknown).
+/// Returns `true` if a warning was emitted (file unreadable / language unknown / not in cache).
+///
+/// Updates: `comment_coverage`, `signatures`, `scanned_at`, `skip`/`skip_reason` (generated files only).
+/// Does NOT update: `internal_imports`, `package`, `language`, `cycle_warning`.
 /// Does NOT recompute stats or write cache — callers must do that.
 pub fn rescan_one(cache: &mut CacheFile, rel: &str) -> bool {
     let root = Path::new(&cache.project_root);
