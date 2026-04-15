@@ -17,6 +17,8 @@ pub enum Commands {
     Rescan(RescanArgs),
     /// Extract Maven project metadata from pom.xml
     Pom(PomArgs),
+    /// Rescan the last-returned file and return the next file + its dep signatures
+    Next(NextArgs),
 }
 
 #[derive(Args, Debug)]
@@ -86,6 +88,13 @@ pub struct RescanArgs {
 
     /// Files to re-parse
     pub file_paths: Vec<std::path::PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct NextArgs {
+    /// Path to .codeskel/cache.json (default: .codeskel/cache.json)
+    #[arg(long, default_value = ".codeskel/cache.json")]
+    pub cache: std::path::PathBuf,
 }
 
 #[derive(Args, Debug)]

@@ -8,6 +8,7 @@ fn main() {
         Commands::Get(args) => codeskel::commands::get::run(args),
         Commands::Rescan(args) => codeskel::commands::rescan::run(args),
         Commands::Pom(args) => codeskel::commands::pom::run(args),
+        Commands::Next(args) => codeskel::commands::next::run(args),
     };
     match result {
         Ok(had_warnings) => {
