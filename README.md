@@ -164,7 +164,52 @@ codeskel rescan .codeskel/cache.json src/main/java/com/example/model/User.java
 
 This re-parses the file and updates its coverage and signatures in-place so downstream dependents have accurate context.
 
-### 4. Extract Maven POM metadata
+### 4. Drive the commenting loop with `next`
+
+`codeskel next` fuses rescan + advance + fetch into one atomic call, making rescan structurally unavoidable. The cursor is stored in `.codeskel/session.json` alongside the cache. A fresh `scan` always clears the session.
+
+```bash
+codeskel next [--cache .codeskel/cache.json]
+```
+
+**First call (bootstrap):** no previous file to rescan; returns index 0.
+
+**Subsequent calls:** rescans the file returned by the previous call, advances the cursor, and returns the next file.
+
+**When exhausted:** returns `{ "done": true }` and clears the session.
+
+**Output:**
+
+```json
+{
+  "done": false,
+  "index": 1,
+  "remaining": 117,
+  "file": {
+    "path": "src/main/java/com/example/model/User.java",
+    "language": "java",
+    "comment_coverage": 0.1,
+    "skip": false,
+    "signatures": [ ... ]
+  },
+  "deps": [
+    {
+      "path": "src/main/java/com/example/base/Entity.java",
+      "signatures": [ ... ]
+    }
+  ]
+}
+```
+
+`file` and `deps` are `null` / `[]` when `done` is `true`. `remaining` counts files not yet returned.
+
+**Option:**
+
+```
+--cache <PATH>   Path to cache.json [default: .codeskel/cache.json]
+```
+
+### 5. Extract Maven POM metadata
 
 ```bash
 codeskel pom /path/to/project [--controller-path src/main/java/Controller.java]
@@ -194,7 +239,22 @@ Reads `pom.xml` directly — no cache needed. Outputs compact JSON:
 
 ## How the `comment` skill uses codeskel
 
-**Project mode** — comment all files in topo order:
+**Project mode** — comment all files in topo order using `next`:
+
+```
+1. codeskel scan <project>          → { cache, stats.to_comment = N }
+2. Loop:
+   a. codeskel next                 → { done, file, deps, remaining }
+   b. If done: break
+   c. Read full source (file.path)
+   d. Generate docstrings (LLM)
+   e. Write file back
+   (rescan of the current file happens automatically on the next `next` call)
+```
+
+`next` replaces the separate `get --index`, `get --deps`, and `rescan` calls from the older loop, and makes rescan structurally unavoidable.
+
+**Alternative (manual loop)** — same result using individual commands:
 
 ```
 1. codeskel scan <project>          → { cache, stats.to_comment = N }
