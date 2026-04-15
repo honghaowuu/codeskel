@@ -9,5 +9,6 @@ pub mod parsers;
 pub mod refs;
 pub mod resolver;
 pub mod scanner;
+pub mod session;
 pub mod walker;
 pub mod commands;
