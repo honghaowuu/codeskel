@@ -79,4 +79,12 @@ mod tests {
         let dir = tempdir().unwrap();
         delete_session(dir.path()); // must not panic
     }
+
+    #[test]
+    fn read_corrupt_returns_default() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("session.json"), b"not json").unwrap();
+        let session = read_session(dir.path());
+        assert_eq!(session.cursor, -1);
+    }
 }
