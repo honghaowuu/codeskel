@@ -26,7 +26,7 @@ pub struct NextOutput {
 
 pub fn run(args: NextArgs) -> anyhow::Result<bool> {
     let output = run_and_capture(args)?;
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    println!("{}", serde_json::to_string(&output)?);
     Ok(false)
 }
 

@@ -59,7 +59,7 @@ pub fn run(args: GetArgs) -> anyhow::Result<bool> {
             .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in cache", path))?
     };
 
-    println!("{}", serde_json::to_string_pretty(entry)?);
+    println!("{}", serde_json::to_string(entry)?);
     Ok(false)
 }
 
@@ -104,7 +104,7 @@ pub fn chain_order(cache: &crate::models::CacheFile, file_path: &str) -> anyhow:
 fn get_chain_count(cache: &crate::models::CacheFile, file_path: &str) -> anyhow::Result<bool> {
     let chain = chain_order(cache, file_path)?;
     let output = json!({ "for": file_path, "count": chain.len() });
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    println!("{}", serde_json::to_string(&output)?);
     Ok(false)
 }
 
@@ -118,7 +118,7 @@ fn get_chain_entry(cache: &crate::models::CacheFile, file_path: &str, index: usi
     // dep_path came from cache.order, so it is guaranteed to be in cache.files
     let entry = cache.files.get(dep_path)
         .expect("dep from cache.order must exist in cache.files");
-    println!("{}", serde_json::to_string_pretty(entry)?);
+    println!("{}", serde_json::to_string(entry)?);
     Ok(false)
 }
 
@@ -141,7 +141,7 @@ fn get_deps(cache: &crate::models::CacheFile, file_path: &str) -> anyhow::Result
         "for": file_path,
         "dependencies": dependencies,
     });
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    println!("{}", serde_json::to_string(&output)?);
     Ok(false)
 }
 
@@ -207,6 +207,6 @@ pub fn compute_refs(
 fn get_refs(cache: &crate::models::CacheFile, file_path: &str) -> anyhow::Result<bool> {
     let refs = compute_refs(cache, file_path)?;
     let output = json!({ "for": file_path, "refs": refs });
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    println!("{}", serde_json::to_string(&output)?);
     Ok(false)
 }

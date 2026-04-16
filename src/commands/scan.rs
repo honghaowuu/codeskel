@@ -41,6 +41,6 @@ pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
         stats: result.stats,
     };
 
-    println!("{}", serde_json::to_string_pretty(&summary)?);
+    println!("{}", serde_json::to_string(&summary)?);
     Ok(false)
 }

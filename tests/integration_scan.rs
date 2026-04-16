@@ -731,3 +731,23 @@ fn test_targeted_skips_missing_chain_entry() {
     assert_eq!(returned_path, file1,
         "should skip ghost and return file1, got: {}", returned_path);
 }
+
+#[test]
+fn next_output_is_compact_json() {
+    use std::process::Command;
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codeskel"))
+        .args(["next", "--cache", cache_path.to_str().unwrap()])
+        .output()
+        .expect("failed to run codeskel");
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    // Compact JSON has no newlines (except possibly a trailing one)
+    let trimmed = stdout.trim();
+    assert!(!trimmed.contains('\n'), "output should be single-line compact JSON, got:\n{}", trimmed);
+    // Should still be valid JSON
+    let _: serde_json::Value = serde_json::from_str(trimmed).expect("output must be valid JSON");
+}

@@ -252,12 +252,12 @@ pub fn run(args: PomArgs) -> anyhow::Result<bool> {
             true,
         )?;
 
-        let json = serde_json::to_string_pretty(&output)?;
+        let json = serde_json::to_string(&output)?;
         println!("{}", json);
         return Ok(false);
     } else {
         let output = extract_output(&pom_path, &content, None, false)?;
-        let json = serde_json::to_string_pretty(&output)?;
+        let json = serde_json::to_string(&output)?;
         println!("{}", json);
         return Ok(false);
     }
