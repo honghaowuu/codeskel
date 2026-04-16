@@ -95,6 +95,10 @@ pub struct NextArgs {
     /// Path to .codeskel/cache.json (default: .codeskel/cache.json)
     #[arg(long, default_value = ".codeskel/cache.json")]
     pub cache: std::path::PathBuf,
+
+    /// Restrict loop to the transitive dep chain of this file (relative path)
+    #[arg(long)]
+    pub target: Option<String>,
 }
 
 #[derive(Args, Debug)]

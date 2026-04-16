@@ -332,7 +332,7 @@ fn test_next_bootstrap_returns_index_0() {
     // No session.json yet
     assert!(!tmp.path().join("session.json").exists());
 
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
     let output = codeskel::commands::next::run_and_capture(args).unwrap();
 
     assert!(!output.done, "bootstrap should not be done");
@@ -362,7 +362,7 @@ fn test_next_empty_cache_returns_done() {
     };
     codeskel::cache::write_cache(tmp.path(), &cache).unwrap();
 
-    let args = codeskel::cli::NextArgs { cache: tmp.path().join("cache.json") };
+    let args = codeskel::cli::NextArgs { cache: tmp.path().join("cache.json"), target: None };
     let output = codeskel::commands::next::run_and_capture(args).unwrap();
 
     assert!(output.done, "empty cache → done immediately");
@@ -378,7 +378,7 @@ fn test_next_advance_rescans_and_returns_next() {
     let cache_path = tmp.path().join("cache.json");
 
     // Bootstrap: index 0
-    let args0 = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let args0 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
     let out0 = codeskel::commands::next::run_and_capture(args0).unwrap();
     assert!(!out0.done);
     assert_eq!(out0.index, Some(0));
@@ -391,7 +391,7 @@ fn test_next_advance_rescans_and_returns_next() {
 
     // Advance: index 1 — should rescan index 0
     std::thread::sleep(std::time::Duration::from_millis(10)); // ensure timestamp advances
-    let args1 = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let args1 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
     let out1 = codeskel::commands::next::run_and_capture(args1).unwrap();
     assert_eq!(out1.index, Some(1), "second call must return index 1");
 
@@ -426,13 +426,13 @@ fn test_next_done_after_last_file() {
     let n = cache.order.len();
 
     // Bootstrap
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
     codeskel::commands::next::run_and_capture(args).unwrap();
 
     // Advance past all remaining files
     let mut last_output = None;
     for _ in 0..n {
-        let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+        let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
         last_output = Some(codeskel::commands::next::run_and_capture(args).unwrap());
     }
 
@@ -461,7 +461,7 @@ fn test_scan_deletes_session() {
     }).unwrap();
 
     let cache_path = tmp.path().join("cache.json");
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone() };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
     codeskel::commands::next::run_and_capture(args).unwrap();
     assert!(tmp.path().join("session.json").exists(), "session must exist after next");
 

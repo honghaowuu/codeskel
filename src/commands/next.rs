@@ -16,6 +16,7 @@ pub struct DepEntry {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NextOutput {
     pub done: bool,
+    pub mode: String,   // "project" | "targeted"
     pub index: Option<usize>,
     pub remaining: usize,
     pub file: Option<FileEntry>,
@@ -67,6 +68,7 @@ pub fn run_and_capture(args: NextArgs) -> anyhow::Result<NextOutput> {
         delete_session(&cache_dir);
         return Ok(NextOutput {
             done: true,
+            mode: "project".into(),
             index: None,
             remaining: 0,
             file: None,
@@ -98,6 +100,7 @@ pub fn run_and_capture(args: NextArgs) -> anyhow::Result<NextOutput> {
 
     Ok(NextOutput {
         done: false,
+        mode: "project".into(),
         index: Some(next_cursor),
         remaining,
         file: Some(file_entry),
