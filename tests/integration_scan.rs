@@ -733,6 +733,28 @@ fn test_targeted_skips_missing_chain_entry() {
 }
 
 #[test]
+fn next_file_entry_omits_skip_and_internal_imports() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    // Advance twice to get a file that has internal_imports (UserService depends on User + UserRepository)
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    codeskel::commands::next::run_and_capture(args).unwrap(); // index 0
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    codeskel::commands::next::run_and_capture(args).unwrap(); // index 1
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let output = codeskel::commands::next::run_and_capture(args).unwrap(); // index 2: UserService
+
+    assert!(!output.done);
+    let json = serde_json::to_string(&output.file).unwrap();
+    assert!(!json.contains("\"skip\""),
+        "skip should not appear in next file output, got: {}", json);
+    assert!(!json.contains("\"internal_imports\""),
+        "internal_imports should not appear in next file output, got: {}", json);
+}
+
+#[test]
 fn next_output_is_compact_json() {
     use std::process::Command;
     let tmp = tempdir().unwrap();

@@ -12,6 +12,33 @@ pub struct DepEntry {
     pub signatures: Vec<Signature>,
 }
 
+/// Slimmed-down file entry for `next` output — omits fields that are always
+/// false/empty in the loop or redundant with `deps`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NextFileEntry {
+    pub path: String,
+    pub language: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    pub comment_coverage: f64,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cycle_warning: bool,
+    pub signatures: Vec<Signature>,
+}
+
+impl From<&FileEntry> for NextFileEntry {
+    fn from(fe: &FileEntry) -> Self {
+        NextFileEntry {
+            path: fe.path.clone(),
+            language: fe.language.clone(),
+            package: fe.package.clone(),
+            comment_coverage: fe.comment_coverage,
+            cycle_warning: fe.cycle_warning,
+            signatures: fe.signatures.clone(),
+        }
+    }
+}
+
 /// The structured output from a `next` call. Used both for JSON printing and for
 /// test assertions (via `run_and_capture`).
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,7 +47,7 @@ pub struct NextOutput {
     pub mode: String,  // "project" | "targeted"
     pub index: Option<usize>,
     pub remaining: usize,
-    pub file: Option<FileEntry>,
+    pub file: Option<NextFileEntry>,
     pub deps: Vec<DepEntry>,
 }
 
@@ -111,7 +138,7 @@ fn run_project(cache_path: std::path::PathBuf) -> anyhow::Result<NextOutput> {
         mode: "project".into(),
         index: Some(next_cursor),
         remaining,
-        file: Some(file_entry),
+        file: Some(NextFileEntry::from(&file_entry)),
         deps,
     })
 }
@@ -166,7 +193,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
             mode: "targeted".into(),
             index: Some(0),
             remaining,
-            file: Some(file_entry),
+            file: Some(NextFileEntry::from(&file_entry)),
             deps,
         });
     }
@@ -230,7 +257,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
         mode: "targeted".into(),
         index: Some(next_cursor),
         remaining,
-        file: Some(file_entry),
+        file: Some(NextFileEntry::from(&file_entry)),
         deps,
     })
 }
