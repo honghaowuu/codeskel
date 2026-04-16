@@ -183,6 +183,7 @@ codeskel next [--cache .codeskel/cache.json]
 ```json
 {
   "done": false,
+  "mode": "project",
   "index": 1,
   "remaining": 117,
   "file": {
@@ -201,13 +202,24 @@ codeskel next [--cache .codeskel/cache.json]
 }
 ```
 
-`file` and `deps` are `null` / `[]` when `done` is `true`. `remaining` counts files not yet returned.
+`file` and `deps` are `null` / `[]` when `done` is `true`. `remaining` counts files not yet returned. `mode` is `"project"` or `"targeted"`.
 
-**Option:**
+**Options:**
 
 ```
---cache <PATH>   Path to cache.json [default: .codeskel/cache.json]
+--cache <PATH>    Path to cache.json [default: .codeskel/cache.json]
+--target <FILE>   Restrict loop to the transitive dep chain of FILE (relative path)
 ```
+
+**Targeted mode** — pass `--target <file>` to restrict the loop to one file's transitive dep chain. The session walks deps deepest-first, then the target itself:
+
+```bash
+codeskel next --target src/main/java/com/example/service/UserService.java
+```
+
+Output is identical in shape but `mode` is `"targeted"`. On the first call the cursor is placed at dep index 0; subsequent calls rescan the previous file and advance. When exhausted, returns `{ "done": true, "mode": "targeted", ... }` and clears the session.
+
+Switching `--target` values or omitting `--target` after a targeted session automatically restarts the appropriate mode.
 
 ### 5. Extract Maven POM metadata
 
@@ -267,7 +279,21 @@ Reads `pom.xml` directly — no cache needed. Outputs compact JSON:
    f. codeskel rescan <cache> <path>         → update cache
 ```
 
-**Targeted single-file mode** — comment one file and its transitive dep chain, touching only the symbols actually referenced:
+**Targeted single-file mode** — comment one file and its transitive dep chain, touching only the symbols actually referenced. Use `next --target` to drive the loop (rescan is automatic, same as project mode):
+
+```
+1. codeskel scan <project>
+2. Loop:
+   a. codeskel next --target <file>   → { done, mode: "targeted", file, deps, remaining }
+   b. If done: break
+   c. Read full source (file.path)
+   d. Generate docstrings for items where has_docstring: false
+      (use --refs output to limit dep files to referenced symbols only)
+   e. Write file back
+   (rescan of the current file happens automatically on the next call)
+```
+
+**Alternative (manual loop)** — equivalent using individual commands:
 
 ```
 1. codeskel scan <project>
