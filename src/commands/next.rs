@@ -2,14 +2,55 @@ use crate::cache::{read_cache, write_cache};
 use crate::cli::NextArgs;
 use crate::commands::get::chain_order;
 use crate::commands::rescan::{rescan_one, recompute_stats};
-use crate::models::{FileEntry, Signature};
+use crate::models::{FileEntry, Param, Signature};
 use crate::session::{delete_session, read_session, write_session, Session};
 use serde::{Deserialize, Serialize};
+
+/// Signature stripped for dep context — no `has_docstring` or `line`,
+/// since Claude uses dep signatures for understanding, not for documenting.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DepSignature {
+    pub kind: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub modifiers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<Vec<Param>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_type: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub throws: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extends: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub implements: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub annotations: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docstring_text: Option<String>,
+}
+
+impl From<&Signature> for DepSignature {
+    fn from(sig: &Signature) -> Self {
+        DepSignature {
+            kind: sig.kind.clone(),
+            name: sig.name.clone(),
+            modifiers: sig.modifiers.clone(),
+            params: sig.params.clone(),
+            return_type: sig.return_type.clone(),
+            throws: sig.throws.clone(),
+            extends: sig.extends.clone(),
+            implements: sig.implements.clone(),
+            annotations: sig.annotations.clone(),
+            docstring_text: sig.docstring_text.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepEntry {
     pub path: String,
-    pub signatures: Vec<Signature>,
+    pub signatures: Vec<DepSignature>,   // was Vec<Signature>
 }
 
 /// Slimmed-down file entry for `next` output — omits fields that are always
@@ -267,7 +308,9 @@ fn build_deps(cache: &crate::models::CacheFile, file_entry: &FileEntry) -> Vec<D
         .filter_map(|dep| {
             cache.files.get(dep).map(|dep_entry| DepEntry {
                 path: dep_entry.path.clone(),
-                signatures: dep_entry.signatures.clone(),
+                signatures: dep_entry.signatures.iter()
+                    .map(DepSignature::from)
+                    .collect(),
             })
         })
         .collect()

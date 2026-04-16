@@ -755,6 +755,28 @@ fn next_file_entry_omits_skip_and_internal_imports() {
 }
 
 #[test]
+fn next_dep_signatures_omit_has_docstring_and_line() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    // Advance to a file that has deps
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    codeskel::commands::next::run_and_capture(args).unwrap(); // index 0
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    codeskel::commands::next::run_and_capture(args).unwrap(); // index 1
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let output = codeskel::commands::next::run_and_capture(args).unwrap(); // index 2: UserService
+
+    assert!(!output.deps.is_empty(), "UserService must have deps");
+    let deps_json = serde_json::to_string(&output.deps).unwrap();
+    assert!(!deps_json.contains("\"has_docstring\""),
+        "has_docstring must not appear in dep signatures, got: {}", deps_json);
+    assert!(!deps_json.contains("\"line\""),
+        "line must not appear in dep signatures, got: {}", deps_json);
+}
+
+#[test]
 fn next_output_is_compact_json() {
     use std::process::Command;
     let tmp = tempdir().unwrap();
