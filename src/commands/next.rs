@@ -81,6 +81,8 @@ pub fn run_and_capture(args: NextArgs) -> anyhow::Result<NextOutput> {
     write_session(&cache_dir, &Session {
         cursor: next_cursor as i64,
         current_file: Some(rel.clone()),
+        target: None,
+        chain: None,
     })?;
 
     let file_entry = cache.files.get(&rel)

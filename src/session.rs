@@ -5,11 +5,17 @@ use std::path::Path;
 pub struct Session {
     pub cursor: i64,  // -1 = not started / complete
     pub current_file: Option<String>,
+    /// Present only in targeted mode. Null in project-mode sessions.
+    #[serde(default)]
+    pub target: Option<String>,
+    /// Ordered chain [dep_0, ..., dep_N-1, target]. Absent in project mode.
+    #[serde(default)]
+    pub chain: Option<Vec<String>>,
 }
 
 impl Default for Session {
     fn default() -> Self {
-        Session { cursor: -1, current_file: None }
+        Session { cursor: -1, current_file: None, target: None, chain: None }
     }
 }
 
@@ -58,7 +64,7 @@ mod tests {
     #[test]
     fn write_read_roundtrip() {
         let dir = tempdir().unwrap();
-        let s = Session { cursor: 3, current_file: Some("src/Foo.java".into()) };
+        let s = Session { cursor: 3, current_file: Some("src/Foo.java".into()), target: None, chain: None };
         write_session(dir.path(), &s).unwrap();
         let back = read_session(dir.path());
         assert_eq!(back, s);
@@ -67,7 +73,7 @@ mod tests {
     #[test]
     fn delete_removes_file() {
         let dir = tempdir().unwrap();
-        let s = Session { cursor: 0, current_file: Some("x".into()) };
+        let s = Session { cursor: 0, current_file: Some("x".into()), target: None, chain: None };
         write_session(dir.path(), &s).unwrap();
         assert!(dir.path().join("session.json").exists());
         delete_session(dir.path());
@@ -86,5 +92,21 @@ mod tests {
         std::fs::write(dir.path().join("session.json"), b"not json").unwrap();
         let session = read_session(dir.path());
         assert_eq!(session.cursor, -1);
+    }
+
+    #[test]
+    fn targeted_session_roundtrip() {
+        let dir = tempdir().unwrap();
+        let s = Session {
+            cursor: 0,
+            current_file: Some("src/A.java".into()),
+            target: Some("src/C.java".into()),
+            chain: Some(vec!["src/A.java".into(), "src/B.java".into(), "src/C.java".into()]),
+        };
+        write_session(dir.path(), &s).unwrap();
+        let back = read_session(dir.path());
+        assert_eq!(back.target, Some("src/C.java".into()));
+        let expected_chain: Vec<String> = vec!["src/A.java".into(), "src/B.java".into(), "src/C.java".into()];
+        assert_eq!(back.chain.as_deref(), Some(expected_chain.as_slice()));
     }
 }
