@@ -777,6 +777,41 @@ fn next_dep_signatures_omit_has_docstring_and_line() {
 }
 
 #[test]
+fn next_deps_filtered_to_referenced_symbols() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    // Advance to UserService (index 2 in topo order: User → UserRepository → UserService)
+    for _ in 0..2 {
+        let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+        codeskel::commands::next::run_and_capture(args).unwrap();
+    }
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let output = codeskel::commands::next::run_and_capture(args).unwrap();
+
+    assert!(!output.done);
+    let file_path = output.file.as_ref().unwrap().path.as_str();
+    assert!(file_path.contains("UserService"), "expected UserService, got: {}", file_path);
+
+    // Find the User dep
+    let user_dep = output.deps.iter()
+        .find(|d| d.path.contains("User.java") && !d.path.contains("UserRepository"))
+        .expect("User dep must be present");
+
+    let sig_names: Vec<&str> = user_dep.signatures.iter()
+        .map(|s| s.name.as_str())
+        .collect();
+
+    // User class (top-level type) must always be present
+    assert!(sig_names.contains(&"User"), "User class must be in dep signatures, got: {:?}", sig_names);
+    // getEmail is referenced in UserService → must be included
+    assert!(sig_names.contains(&"getEmail"), "getEmail must be included (referenced), got: {:?}", sig_names);
+    // setEmail is NOT referenced in UserService → must be filtered out
+    assert!(!sig_names.contains(&"setEmail"), "setEmail must be filtered out (unreferenced), got: {:?}", sig_names);
+}
+
+#[test]
 fn next_output_is_compact_json() {
     use std::process::Command;
     let tmp = tempdir().unwrap();

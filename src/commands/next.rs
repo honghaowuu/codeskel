@@ -171,7 +171,7 @@ fn run_project(cache_path: std::path::PathBuf) -> anyhow::Result<NextOutput> {
         .ok_or_else(|| anyhow::anyhow!("File {} in order but missing from files map", rel))?
         .clone();
 
-    let deps = build_deps(&cache, &file_entry);
+    let deps = build_deps(&cache, &file_entry)?;
     let remaining = cache.order.len() - next_cursor - 1;
 
     Ok(NextOutput {
@@ -226,7 +226,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
             .ok_or_else(|| anyhow::anyhow!("File {} in chain but missing from files map", first))?
             .clone();
 
-        let deps = build_deps(&cache, &file_entry);
+        let deps = build_deps(&cache, &file_entry)?;
         let remaining = chain.len() - 1;
 
         return Ok(NextOutput {
@@ -290,7 +290,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
         .ok_or_else(|| anyhow::anyhow!("File {} in chain but missing from files map", next_file))?
         .clone();
 
-    let deps = build_deps(&cache, &file_entry);
+    let deps = build_deps(&cache, &file_entry)?;
     let remaining = chain.len() - next_cursor - 1;
 
     Ok(NextOutput {
@@ -303,15 +303,50 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
     })
 }
 
-fn build_deps(cache: &crate::models::CacheFile, file_entry: &FileEntry) -> Vec<DepEntry> {
-    file_entry.internal_imports.iter()
+const TOP_LEVEL_KINDS: &[&str] = &["class", "interface", "enum", "struct", "trait", "type_alias"];
+
+fn build_deps(
+    cache: &crate::models::CacheFile,
+    file_entry: &FileEntry,
+) -> anyhow::Result<Vec<DepEntry>> {
+    // Attempt refs analysis; on failure, fall back to unfiltered (all deps get all sigs)
+    let refs_map = match crate::commands::get::compute_refs(cache, &file_entry.path) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "[codeskel] Warning: refs analysis failed for '{}': {}; using unfiltered deps",
+                file_entry.path, e
+            );
+            std::collections::HashMap::new()
+        }
+    };
+
+    let entries = file_entry.internal_imports.iter()
         .filter_map(|dep| {
-            cache.files.get(dep).map(|dep_entry| DepEntry {
-                path: dep_entry.path.clone(),
-                signatures: dep_entry.signatures.iter()
+            cache.files.get(dep).map(|dep_entry| {
+                let referenced = refs_map.get(dep.as_str());
+                let signatures: Vec<DepSignature> = dep_entry.signatures.iter()
+                    .filter(|sig| {
+                        // Top-level type declarations are always included as structural anchors
+                        if TOP_LEVEL_KINDS.contains(&sig.kind.as_str()) {
+                            return true;
+                        }
+                        // Non-empty refs list → filter to referenced names only
+                        // Absent key or empty list → fallback: include all
+                        match referenced {
+                            Some(names) if !names.is_empty() => names.contains(&sig.name),
+                            _ => true,
+                        }
+                    })
                     .map(DepSignature::from)
-                    .collect(),
+                    .collect();
+                DepEntry {
+                    path: dep_entry.path.clone(),
+                    signatures,
+                }
             })
         })
-        .collect()
+        .collect();
+
+    Ok(entries)
 }
