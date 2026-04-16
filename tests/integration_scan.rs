@@ -752,6 +752,10 @@ fn next_file_entry_omits_skip_and_internal_imports() {
         "skip should not appear in next file output, got: {}", json);
     assert!(!json.contains("\"internal_imports\""),
         "internal_imports should not appear in next file output, got: {}", json);
+    assert!(!json.contains("\"skip_reason\""),
+        "skip_reason should not appear in next file output, got: {}", json);
+    assert!(!json.contains("\"scanned_at\""),
+        "scanned_at should not appear in next file output, got: {}", json);
 }
 
 #[test]

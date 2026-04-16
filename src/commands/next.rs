@@ -47,6 +47,7 @@ impl From<&Signature> for DepSignature {
     }
 }
 
+/// One dependency entry returned by `next` — the dep's path and its filtered signatures.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepEntry {
     pub path: String,
