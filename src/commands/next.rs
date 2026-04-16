@@ -188,34 +188,28 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
         eprintln!("[codeskel] Warning: session has active cursor but no current_file; skipping rescan.");
     }
 
-    let next_cursor = (session.cursor + 1) as usize;
-
-    if next_cursor >= chain.len() {
-        delete_session(&cache_dir);
-        return Ok(NextOutput {
-            done: true,
-            mode: "targeted".into(),
-            index: None,
-            remaining: 0,
-            file: None,
-            deps: vec![],
-        });
+    // Advance past any chain entries that are no longer in cache
+    let mut next_cursor = (session.cursor + 1) as usize;
+    loop {
+        if next_cursor >= chain.len() {
+            delete_session(&cache_dir);
+            return Ok(NextOutput {
+                done: true,
+                mode: "targeted".into(),
+                index: None,
+                remaining: 0,
+                file: None,
+                deps: vec![],
+            });
+        }
+        let candidate = &chain[next_cursor];
+        if cache.files.contains_key(candidate.as_str()) {
+            break; // found a valid entry
+        }
+        eprintln!("[codeskel] Warning: chain entry '{}' no longer in cache; skipping.", candidate);
+        next_cursor += 1;
     }
-
     let next_file = chain[next_cursor].clone();
-
-    if !cache.files.contains_key(&next_file) {
-        eprintln!("[codeskel] Warning: chain entry '{}' no longer in cache; skipping.", next_file);
-        delete_session(&cache_dir);
-        return Ok(NextOutput {
-            done: true,
-            mode: "targeted".into(),
-            index: None,
-            remaining: 0,
-            file: None,
-            deps: vec![],
-        });
-    }
 
     write_session(&cache_dir, &Session {
         cursor: next_cursor as i64,
