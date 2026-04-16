@@ -303,7 +303,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
     })
 }
 
-const TOP_LEVEL_KINDS: &[&str] = &["class", "interface", "enum", "struct", "trait", "type_alias"];
+const TOP_LEVEL_KINDS: &[&str] = &["class", "interface", "enum", "struct", "trait", "type", "type_alias"];
 
 fn build_deps(
     cache: &crate::models::CacheFile,
