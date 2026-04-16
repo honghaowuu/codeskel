@@ -16,19 +16,40 @@ All commands use `serde_json::to_string_pretty`, which produces verbose indented
 
 ### 1. Compact JSON everywhere
 
-Change every command's `run()` from `serde_json::to_string_pretty` to `serde_json::to_string`. Affects: `scan`, `get`, `next`, `pom`, `rescan`. No behavioral change. Expected ~3-4x token reduction.
+Change every command's `run()` from `serde_json::to_string_pretty` to `serde_json::to_string`. Affects: `scan`, `get`, `next`, `pom`. `rescan` prints only to `eprintln!` (no JSON output) — no change needed there.
 
-### 2. `next` file entry — `NextFileEntry` struct
+Expected ~3-4x token reduction with no behavioral change.
 
-Replace `FileEntry` in `NextOutput.file` with a new `NextFileEntry` (defined in `src/commands/next.rs`):
+### 2. `next` output structs
+
+#### Updated `NextOutput`
 
 ```rust
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NextOutput {
+    pub done: bool,
+    pub mode: String,              // "project" | "targeted"
+    pub index: Option<usize>,
+    pub remaining: usize,
+    pub file: Option<NextFileEntry>,   // was Option<FileEntry>
+    pub deps: Vec<DepEntry>,
+}
+```
+
+#### New `NextFileEntry`
+
+Replaces `FileEntry` in `NextOutput.file`. Defined in `src/commands/next.rs`:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NextFileEntry {
     pub path: String,
     pub language: String,
-    pub package: Option<String>,          // skip_serializing_if None
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
     pub comment_coverage: f64,
-    pub cycle_warning: bool,              // skip_serializing_if false
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub cycle_warning: bool,
     pub signatures: Vec<Signature>,
 }
 ```
@@ -44,22 +65,41 @@ Fields removed vs `FileEntry`:
 
 ### 3. `deps` — `DepSignature` struct + refs-filtered content
 
-#### 3a. New `DepSignature` type
-
-Replace `Vec<Signature>` in `DepEntry` with `Vec<DepSignature>` (defined in `src/commands/next.rs`):
+#### Updated `DepEntry`
 
 ```rust
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DepEntry {
+    pub path: String,
+    pub signatures: Vec<DepSignature>,   // was Vec<Signature>
+}
+```
+
+#### New `DepSignature`
+
+Defined in `src/commands/next.rs`:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepSignature {
     pub kind: String,
     pub name: String,
-    pub modifiers: Vec<String>,           // skip_serializing_if empty
-    pub params: Option<Vec<Param>>,       // skip_serializing_if None
-    pub return_type: Option<String>,      // skip_serializing_if None
-    pub throws: Vec<String>,              // skip_serializing_if empty
-    pub extends: Option<String>,          // skip_serializing_if None
-    pub implements: Vec<String>,          // skip_serializing_if empty
-    pub annotations: Vec<String>,         // skip_serializing_if empty
-    pub docstring_text: Option<String>,   // skip_serializing_if None
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub modifiers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<Vec<Param>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_type: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub throws: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extends: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub implements: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub annotations: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docstring_text: Option<String>,
 }
 ```
 
@@ -70,17 +110,26 @@ Fields removed vs `Signature`:
 | `has_docstring` | Claude does not need to document dep symbols |
 | `line` | Claude will not navigate to lines in dep files |
 
-`docstring_text` is kept: when a dep symbol is already documented, Claude can read that text instead of opening the dep file, saving tokens.
+`docstring_text` is kept: when a dep symbol is already documented, Claude reads that text instead of opening the dep file.
 
-#### 3b. Refs-based filtering in `build_deps`
+#### Refs-based filtering in `build_deps`
 
-`build_deps` calls `compute_refs` (already in `src/commands/get.rs`) to determine which symbols the current file actually uses from each dep. Filtering rules per dep:
+`build_deps` becomes fallible and calls `compute_refs` (already in `src/commands/get.rs`) once for the current file, producing a `HashMap<dep_path, Vec<String>>`. Filtering rules applied per dep:
 
-- **Top-level type declarations** (`kind` ∈ `{class, interface, enum, struct, trait, type_alias}`): always included as structural anchors.
-- **Other signatures**: included only if `name` appears in the refs result for that dep.
-- **Fallback** (refs returns empty for a dep — unsupported language, no symbols found, or source unreadable): include all signatures for that dep. No silent data loss.
+**Key lookup semantics:**
+- `dep_path` **absent from the map** → refs analysis produced no entry for that dep → fallback: include all signatures
+- `dep_path` **present with empty Vec** → dep was scanned but no symbols matched → fallback: include all signatures
+- `dep_path` **present with non-empty Vec** → filter applies
 
-`build_deps` becomes fallible (`anyhow::Result<Vec<DepEntry>>`). On I/O error reading source for refs, log a warning and fall back to unfiltered signatures.
+**When filter applies:**
+- Top-level type declarations (`kind` ∈ `{class, interface, enum, struct, trait, type_alias}`): always included as structural anchors
+- Other signatures: included only if `name` ∈ the refs Vec for that dep
+
+**Fallback scope:** `compute_refs` does one source-file read. If that read fails (I/O error), log a warning via `eprintln!` and skip refs analysis entirely — all deps fall back to unfiltered signatures. This is a single decision affecting all deps for that call.
+
+**Signature conversion:** All included `Signature` values are converted to `DepSignature` (drop `has_docstring` and `line`).
+
+**Call sites:** Both `run_project` and `run_targeted` call `build_deps`. Since `build_deps` becomes `fn build_deps(cache: &CacheFile, file_entry: &FileEntry) -> anyhow::Result<Vec<DepEntry>>`, both call sites propagate with `?`. The enclosing `run_and_capture` already returns `anyhow::Result<NextOutput>`, so this is a natural fit.
 
 ## File Changes
 
@@ -88,13 +137,13 @@ Fields removed vs `Signature`:
 |---|---|
 | `src/commands/scan.rs` | `to_string_pretty` → `to_string` |
 | `src/commands/get.rs` | `to_string_pretty` → `to_string` |
-| `src/commands/rescan.rs` | `to_string_pretty` → `to_string` (if applicable) |
 | `src/commands/pom.rs` | `to_string_pretty` → `to_string` |
-| `src/commands/next.rs` | Add `NextFileEntry`, `DepSignature`; update `NextOutput`; update `build_deps` |
+| `src/commands/next.rs` | Add `NextFileEntry`, `DepSignature`; update `NextOutput`, `DepEntry`; update `build_deps` |
+| `src/commands/rescan.rs` | No change (prints only to `eprintln!`, no JSON output) |
 | `src/models.rs` | No changes |
 
 ## Non-Goals
 
-- No changes to `get`, `scan`, `pom`, `rescan` output structure — only serialization format.
+- No changes to `get`, `scan`, `pom` output structure — only serialization format.
 - No changes to cache format or session format.
 - No new CLI flags.
