@@ -341,11 +341,15 @@ fn build_deps(
                     })
                     .map(DepSignature::from)
                     .collect();
-                DepEntry {
+                if signatures.is_empty() {
+                    return None;
+                }
+                Some(DepEntry {
                     path: dep_entry.path.clone(),
                     signatures,
-                }
+                })
             })
+            .flatten()
         })
         .collect();
 
