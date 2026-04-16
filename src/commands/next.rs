@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Signature stripped for dep context — no `has_docstring` or `line`,
 /// since Claude uses dep signatures for understanding, not for documenting.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepSignature {
     pub kind: String,
     pub name: String,
@@ -50,7 +50,7 @@ impl From<&Signature> for DepSignature {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepEntry {
     pub path: String,
-    pub signatures: Vec<DepSignature>,   // was Vec<Signature>
+    pub signatures: Vec<DepSignature>,
 }
 
 /// Slimmed-down file entry for `next` output — omits fields that are always
