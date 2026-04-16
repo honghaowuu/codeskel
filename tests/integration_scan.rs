@@ -524,11 +524,15 @@ fn test_targeted_advances_through_chain_and_done() {
         .chain.unwrap().len();
 
     // Advance through all remaining chain entries
+    let mut pre_done = None;
     let mut last = None;
     for _ in 1..=chain_len {
         let out = codeskel::commands::next::run_and_capture(
             make_targeted_args(cache_path.clone(), &target)
         ).unwrap();
+        if !out.done {
+            pre_done = Some(out.file.as_ref().map(|f| f.path.clone()).unwrap_or_default());
+        }
         last = Some(out);
     }
 
@@ -539,6 +543,9 @@ fn test_targeted_advances_through_chain_and_done() {
     assert!(done.file.is_none());
     // session.json deleted on done
     assert!(!tmp.path().join("session.json").exists());
+    // The last non-done call must have returned the target file
+    assert_eq!(pre_done.as_deref(), Some(target.as_str()),
+        "last non-done iteration must return the target file itself");
 }
 
 #[test]
@@ -686,4 +693,41 @@ fn test_scan_deletes_session() {
 
     assert!(!tmp.path().join("session.json").exists(),
         "session.json must be deleted by scan");
+}
+
+#[test]
+fn test_targeted_skips_missing_chain_entry() {
+    // Verify that a chain entry no longer in cache is skipped and the next valid entry is returned.
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+
+    // Pick two real files from the cache
+    let file0 = cache.order.get(0).cloned().expect("order must have at least 2 entries");
+    let file1 = cache.order.get(1).cloned().expect("order must have at least 2 entries");
+    let target = cache.order.last().cloned().expect("order must be non-empty");
+
+    // Manually write a session: cursor=0, current_file=file0
+    // chain = [file0, "ghost_file_that_does_not_exist.java", file1, target]
+    let ghost = "com/example/GhostFile.java".to_string();
+    let chain = vec![file0.clone(), ghost.clone(), file1.clone(), target.clone()];
+    codeskel::session::write_session(tmp.path(), &codeskel::session::Session {
+        cursor: 0,
+        current_file: Some(file0.clone()),
+        target: Some(target.clone()),
+        chain: Some(chain),
+    }).unwrap();
+
+    // Call next --target: should rescan file0, then skip ghost, then return file1
+    let out = codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target)
+    ).unwrap();
+
+    assert!(!out.done, "should not be done — file1 and target still remain after skipping ghost");
+    assert_eq!(out.mode, "targeted");
+    let returned_path = out.file.as_ref().expect("file must be present").path.clone();
+    assert_eq!(returned_path, file1,
+        "should skip ghost and return file1, got: {}", returned_path);
 }
