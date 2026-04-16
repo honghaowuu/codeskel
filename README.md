@@ -18,20 +18,10 @@ cargo install codeskel
 codeskel scan /path/to/project
 ```
 
-Prints a small summary JSON to stdout and writes the full cache to `.codeskel/cache.json`:
+Prints a compact JSON summary to stdout and writes the full cache to `.codeskel/cache.json`. All codeskel commands emit compact (single-line) JSON — designed for machine consumption:
 
 ```json
-{
-  "project_root": "/abs/path/to/project",
-  "detected_languages": ["java", "python"],
-  "cache": "/abs/path/to/project/.codeskel/cache.json",
-  "stats": {
-    "total_files": 142,
-    "skipped_covered": 18,
-    "skipped_generated": 5,
-    "to_comment": 119
-  }
-}
+{"project_root":"/abs/path/to/project","detected_languages":["java","python"],"cache":"/abs/path/to/project/.codeskel/cache.json","stats":{"total_files":142,"skipped_covered":18,"skipped_generated":5,"to_comment":119}}
 ```
 
 `stats.to_comment` is the loop bound the LLM uses — files already well-commented or auto-generated are excluded.
@@ -181,26 +171,12 @@ codeskel next [--cache .codeskel/cache.json]
 **Output:**
 
 ```json
-{
-  "done": false,
-  "mode": "project",
-  "index": 1,
-  "remaining": 117,
-  "file": {
-    "path": "src/main/java/com/example/model/User.java",
-    "language": "java",
-    "comment_coverage": 0.1,
-    "skip": false,
-    "signatures": [ ... ]
-  },
-  "deps": [
-    {
-      "path": "src/main/java/com/example/base/Entity.java",
-      "signatures": [ ... ]
-    }
-  ]
-}
+{"done":false,"mode":"project","index":1,"remaining":117,"file":{"path":"src/main/java/com/example/model/User.java","language":"java","comment_coverage":0.1,"signatures":[...]},"deps":[{"path":"src/main/java/com/example/base/Entity.java","signatures":[...]}]}
 ```
+
+Output is compact JSON (single line). The `file` object contains `path`, `language`, `package` (Java only), `comment_coverage`, `cycle_warning` (omitted when false), and `signatures`. It does **not** include `skip` (always false in the loop) or `internal_imports` (redundant with `deps`).
+
+`deps[].signatures` are filtered to only the symbols the current file actually references, plus top-level type declarations (class/struct/interface/etc.) as structural anchors. This means Claude sees exactly the context it needs without noise from unreferenced methods. Signatures in `deps` include `docstring_text` when present so Claude can read existing documentation without opening dep files. `has_docstring` and `line` are omitted from dep signatures.
 
 `file` and `deps` are `null` / `[]` when `done` is `true`. `remaining` counts files not yet returned. `mode` is `"project"` or `"targeted"`.
 
@@ -288,7 +264,7 @@ Reads `pom.xml` directly — no cache needed. Outputs compact JSON:
    b. If done: break
    c. Read full source (file.path)
    d. Generate docstrings for items where has_docstring: false
-      (use --refs output to limit dep files to referenced symbols only)
+      (deps already filtered to referenced symbols — no extra --refs call needed)
    e. Write file back
    (rescan of the current file happens automatically on the next call)
 ```
