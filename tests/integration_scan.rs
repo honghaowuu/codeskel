@@ -443,6 +443,213 @@ fn test_next_done_after_last_file() {
     assert_eq!(done_output.remaining, 0);
 }
 
+// ── codeskel next --target (targeted mode) tests ────────────────────
+
+fn make_targeted_args(cache_path: std::path::PathBuf, target: &str) -> codeskel::cli::NextArgs {
+    codeskel::cli::NextArgs { cache: cache_path, target: Some(target.to_string()) }
+}
+
+#[test]
+fn test_targeted_bootstrap_returns_first_dep() {
+    // java_refs_project: UserService.java imports User.java and UserRepository.java
+    // chain should be [User.java, UserRepository.java, UserService.java] (topo order)
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    let target = cache.order.iter()
+        .find(|p| p.contains("UserService"))
+        .cloned()
+        .expect("UserService must be in order");
+
+    let args = make_targeted_args(cache_path.clone(), &target);
+    let out = codeskel::commands::next::run_and_capture(args).unwrap();
+
+    assert!(!out.done, "bootstrap must not be done");
+    assert_eq!(out.mode, "targeted");
+    assert_eq!(out.index, Some(0), "first call returns index 0 within chain");
+    assert!(out.file.is_some());
+
+    let session = codeskel::session::read_session(tmp.path());
+    assert_eq!(session.target.as_deref(), Some(target.as_str()));
+    assert!(session.chain.as_ref().map(|c| c.len()).unwrap_or(0) >= 1);
+    // Target itself is last entry in chain
+    assert_eq!(session.chain.as_ref().unwrap().last().map(|s| s.as_str()), Some(target.as_str()));
+}
+
+#[test]
+fn test_targeted_no_deps_chain_is_target_only() {
+    // Use a file with no internal imports. In java_project, Base.java has no internal imports.
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    let target = cache.order.iter()
+        .find(|p| p.contains("Base"))
+        .cloned()
+        .expect("Base must be in order");
+
+    let args = make_targeted_args(cache_path.clone(), &target);
+    let out = codeskel::commands::next::run_and_capture(args).unwrap();
+
+    // Chain = [target] only → bootstrap returns target immediately at index 0
+    assert!(!out.done);
+    assert_eq!(out.mode, "targeted");
+    assert_eq!(out.index, Some(0));
+    let session = codeskel::session::read_session(tmp.path());
+    assert_eq!(session.chain.as_ref().unwrap().len(), 1);
+    assert_eq!(session.chain.as_ref().unwrap()[0], target);
+}
+
+#[test]
+fn test_targeted_advances_through_chain_and_done() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    let target = cache.order.iter()
+        .find(|p| p.contains("UserService"))
+        .cloned()
+        .expect("UserService must be in order");
+
+    // Bootstrap
+    let out0 = codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target)
+    ).unwrap();
+    assert!(!out0.done);
+    let chain_len = codeskel::session::read_session(tmp.path())
+        .chain.unwrap().len();
+
+    // Advance through all remaining chain entries
+    let mut last = None;
+    for _ in 1..=chain_len {
+        let out = codeskel::commands::next::run_and_capture(
+            make_targeted_args(cache_path.clone(), &target)
+        ).unwrap();
+        last = Some(out);
+    }
+
+    let done = last.unwrap();
+    assert!(done.done, "after chain_len advances, must be done");
+    assert_eq!(done.mode, "targeted");
+    assert_eq!(done.remaining, 0);
+    assert!(done.file.is_none());
+    // session.json deleted on done
+    assert!(!tmp.path().join("session.json").exists());
+}
+
+#[test]
+fn test_targeted_done_then_bootstrap_again() {
+    // After done (session deleted), calling next --target should bootstrap fresh (not error).
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    let target = cache.order.iter()
+        .find(|p| p.contains("Base"))
+        .cloned()
+        .expect("Base must be in order");
+
+    // Bootstrap → done immediately (no deps)
+    let _out0 = codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target)
+    ).unwrap();
+    let done = codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target)
+    ).unwrap();
+    assert!(done.done);
+    assert!(!tmp.path().join("session.json").exists());
+
+    // Call again — should re-bootstrap cleanly
+    let restart = codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target)
+    ).unwrap();
+    assert!(!restart.done, "after done+delete, next call bootstraps again");
+    assert_eq!(restart.index, Some(0));
+}
+
+#[test]
+fn test_targeted_mismatch_warns_and_rebootstraps() {
+    // Start a targeted session for target A, then call with target B.
+    // Should warn to stderr and bootstrap fresh for B.
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    let target_a = cache.order.iter()
+        .find(|p| p.contains("UserService"))
+        .cloned()
+        .expect("UserService must be in order");
+    let target_b = cache.order.iter()
+        .find(|p| p.contains("UserRepository"))
+        .cloned()
+        .expect("UserRepository must be in order");
+
+    // Bootstrap for A
+    codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target_a)
+    ).unwrap();
+
+    // Now call with B — should bootstrap for B, not continue A's session
+    let out_b = codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target_b)
+    ).unwrap();
+    assert!(!out_b.done);
+    assert_eq!(out_b.mode, "targeted");
+
+    let session = codeskel::session::read_session(tmp.path());
+    assert_eq!(session.target.as_deref(), Some(target_b.as_str()),
+        "session must now track target B");
+}
+
+#[test]
+fn test_targeted_project_mode_mismatch_rebootstraps_project() {
+    // Start a targeted session, then call bare next (project mode).
+    // Should warn and bootstrap project mode.
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_refs_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let cache = codeskel::cache::read_cache(&cache_path).unwrap();
+    let target = cache.order.iter()
+        .find(|p| p.contains("UserService"))
+        .cloned()
+        .expect("UserService must be in order");
+
+    // Bootstrap targeted session
+    codeskel::commands::next::run_and_capture(
+        make_targeted_args(cache_path.clone(), &target)
+    ).unwrap();
+
+    // Call project mode (no --target)
+    let proj_out = codeskel::commands::next::run_and_capture(
+        codeskel::cli::NextArgs { cache: cache_path.clone(), target: None }
+    ).unwrap();
+    assert!(!proj_out.done);
+    assert_eq!(proj_out.mode, "project");
+    assert_eq!(proj_out.index, Some(0), "project mode restarted at index 0");
+}
+
+#[test]
+fn test_targeted_error_on_missing_target() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_project", tmp.path());
+    let cache_path = tmp.path().join("cache.json");
+
+    let args = make_targeted_args(cache_path.clone(), "src/DoesNotExist.java");
+    let result = codeskel::commands::next::run_and_capture(args);
+    assert!(result.is_err(), "missing target must return Err");
+    let msg = format!("{}", result.unwrap_err());
+    assert!(msg.contains("not found in cache"), "error message should say 'not found in cache', got: {}", msg);
+    // No session written
+    assert!(!tmp.path().join("session.json").exists());
+}
+
 #[test]
 fn test_scan_deletes_session() {
     let tmp = tempdir().unwrap();
