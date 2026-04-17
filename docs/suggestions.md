@@ -44,6 +44,13 @@ The current session state lives inside `cache.json`, making it unclear whether a
 
 ## Comment skill suggestions
 
+> **For the comment skill maintainer — action summary:**
+> All 5 suggestions below are valid and should be implemented in the skill. The tool changes (--max-fields, existing_word_count) are being shipped separately and will make some of these easier; the skill can start using them immediately once available. Key facts from the tool side:
+> - `codeskel rescan <file>` already exists — agents should use it explicitly instead of relying on `next` to trigger rescan implicitly.
+> - `next` output will soon include `fields_omitted: N` on dep entries where fields were truncated — useful for the tiered treatment in suggestion #4.
+> - `existing_word_count` will be added to all signatures — use it to drive "write from scratch" vs "improve existing" decisions without reading source files.
+> - `codeskel peek` does NOT exist — the recovery pattern for large truncated output is: read the saved JSON file path shown in the truncation message.
+
 **1. Guard against double-`next` with a single shell call**
 
 The skill instructs calling `codeskel next` to get file context, but the natural agent pattern of "first call for summary, second call for details" silently skips a file. The skill should enforce: **one `next` call per iteration, period**. Pipe summary extraction into the same call using Python/jq inline. Never call `next` twice without an edit in between.
