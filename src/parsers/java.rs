@@ -256,6 +256,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
@@ -291,6 +292,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
@@ -326,6 +328,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
@@ -370,6 +373,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
@@ -402,6 +406,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         };
         self.result.signatures.push(sig);
@@ -447,6 +452,7 @@ impl<'a> Walker<'a> {
                     annotations: Vec::new(),
                     line,
                     has_docstring: doc.is_some(),
+                    existing_word_count: 0,
                     docstring_text: doc.clone(),
                 };
                 self.result.signatures.push(sig);

@@ -332,7 +332,7 @@ fn test_next_bootstrap_returns_index_0() {
     // No session.json yet
     assert!(!tmp.path().join("session.json").exists());
 
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     let output = codeskel::commands::next::run_and_capture(args).unwrap();
 
     assert!(!output.done, "bootstrap should not be done");
@@ -362,7 +362,7 @@ fn test_next_empty_cache_returns_done() {
     };
     codeskel::cache::write_cache(tmp.path(), &cache).unwrap();
 
-    let args = codeskel::cli::NextArgs { cache: tmp.path().join("cache.json"), target: None };
+    let args = codeskel::cli::NextArgs { cache: tmp.path().join("cache.json"), target: None, max_fields: 0 };
     let output = codeskel::commands::next::run_and_capture(args).unwrap();
 
     assert!(output.done, "empty cache → done immediately");
@@ -378,7 +378,7 @@ fn test_next_advance_rescans_and_returns_next() {
     let cache_path = tmp.path().join("cache.json");
 
     // Bootstrap: index 0
-    let args0 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args0 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     let out0 = codeskel::commands::next::run_and_capture(args0).unwrap();
     assert!(!out0.done);
     assert_eq!(out0.index, Some(0));
@@ -391,7 +391,7 @@ fn test_next_advance_rescans_and_returns_next() {
 
     // Advance: index 1 — should rescan index 0
     std::thread::sleep(std::time::Duration::from_millis(10)); // ensure timestamp advances
-    let args1 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args1 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     let out1 = codeskel::commands::next::run_and_capture(args1).unwrap();
     assert_eq!(out1.index, Some(1), "second call must return index 1");
 
@@ -426,13 +426,13 @@ fn test_next_done_after_last_file() {
     let n = cache.order.len();
 
     // Bootstrap
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     codeskel::commands::next::run_and_capture(args).unwrap();
 
     // Advance past all remaining files
     let mut last_output = None;
     for _ in 0..n {
-        let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+        let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
         last_output = Some(codeskel::commands::next::run_and_capture(args).unwrap());
     }
 
@@ -446,7 +446,7 @@ fn test_next_done_after_last_file() {
 // ── codeskel next --target (targeted mode) tests ────────────────────
 
 fn make_targeted_args(cache_path: std::path::PathBuf, target: &str) -> codeskel::cli::NextArgs {
-    codeskel::cli::NextArgs { cache: cache_path, target: Some(target.to_string()) }
+    codeskel::cli::NextArgs { cache: cache_path, target: Some(target.to_string()), max_fields: 0 }
 }
 
 #[test]
@@ -635,7 +635,7 @@ fn test_targeted_project_mode_mismatch_rebootstraps_project() {
 
     // Call project mode (no --target)
     let proj_out = codeskel::commands::next::run_and_capture(
-        codeskel::cli::NextArgs { cache: cache_path.clone(), target: None }
+        codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 }
     ).unwrap();
     assert!(!proj_out.done);
     assert_eq!(proj_out.mode, "project");
@@ -675,7 +675,7 @@ fn test_scan_deletes_session() {
     }).unwrap();
 
     let cache_path = tmp.path().join("cache.json");
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     codeskel::commands::next::run_and_capture(args).unwrap();
     assert!(tmp.path().join("session.json").exists(), "session must exist after next");
 
@@ -739,11 +739,11 @@ fn next_file_entry_omits_skip_and_internal_imports() {
     let cache_path = tmp.path().join("cache.json");
 
     // Advance twice to get a file that has internal_imports (UserService depends on User + UserRepository)
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     codeskel::commands::next::run_and_capture(args).unwrap(); // index 0
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     codeskel::commands::next::run_and_capture(args).unwrap(); // index 1
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     let output = codeskel::commands::next::run_and_capture(args).unwrap(); // index 2: UserService
 
     assert!(!output.done);
@@ -765,11 +765,11 @@ fn next_dep_signatures_omit_has_docstring_and_line() {
     let cache_path = tmp.path().join("cache.json");
 
     // Advance to a file that has deps
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     codeskel::commands::next::run_and_capture(args).unwrap(); // index 0
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     codeskel::commands::next::run_and_capture(args).unwrap(); // index 1
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     let output = codeskel::commands::next::run_and_capture(args).unwrap(); // index 2: UserService
 
     assert!(!output.deps.is_empty(), "UserService must have deps");
@@ -788,10 +788,10 @@ fn next_deps_filtered_to_referenced_symbols() {
 
     // Advance to UserService (index 2 in topo order: User → UserRepository → UserService)
     for _ in 0..2 {
-        let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+        let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
         codeskel::commands::next::run_and_capture(args).unwrap();
     }
-    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None };
+    let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
     let output = codeskel::commands::next::run_and_capture(args).unwrap();
 
     assert!(!output.done);
@@ -833,4 +833,209 @@ fn next_output_is_compact_json() {
     assert!(!trimmed.contains('\n'), "output should be single-line compact JSON, got:\n{}", trimmed);
     // Should still be valid JSON
     let _: serde_json::Value = serde_json::from_str(trimmed).expect("output must be valid JSON");
+}
+
+#[test]
+fn test_next_max_fields_truncates_fields() {
+    use codeskel::models::{CacheFile, FileEntry, Signature, Stats};
+    use std::collections::HashMap;
+
+    let tmp = tempdir().unwrap();
+
+    let mut dep_sigs: Vec<Signature> = vec![Signature {
+        kind: "class".into(), name: "AppExCode".into(),
+        modifiers: vec![], params: None, return_type: None,
+        throws: vec![], extends: None, implements: vec![], annotations: vec![],
+        line: 1, has_docstring: false, existing_word_count: 0, docstring_text: None,
+    }];
+    for i in 0..8usize {
+        dep_sigs.push(Signature {
+            kind: "field".into(), name: format!("CODE_{}", i),
+            modifiers: vec![], params: None, return_type: None,
+            throws: vec![], extends: None, implements: vec![], annotations: vec![],
+            line: i + 2, has_docstring: false, existing_word_count: 0, docstring_text: None,
+        });
+    }
+
+    let main_sig = Signature {
+        kind: "class".into(), name: "MyService".into(),
+        modifiers: vec![], params: None, return_type: None,
+        throws: vec![], extends: None, implements: vec![], annotations: vec![],
+        line: 1, has_docstring: false, existing_word_count: 0, docstring_text: None,
+    };
+
+    let mut files = HashMap::new();
+    files.insert("src/AppExCode.java".into(), FileEntry {
+        path: "src/AppExCode.java".into(), language: "java".into(),
+        package: None, comment_coverage: 0.0, skip: false, skip_reason: None,
+        cycle_warning: false, internal_imports: vec![], signatures: dep_sigs, scanned_at: None,
+    });
+    files.insert("src/MyService.java".into(), FileEntry {
+        path: "src/MyService.java".into(), language: "java".into(),
+        package: None, comment_coverage: 0.0, skip: false, skip_reason: None,
+        cycle_warning: false,
+        internal_imports: vec!["src/AppExCode.java".into()],
+        signatures: vec![main_sig], scanned_at: None,
+    });
+
+    let cache = CacheFile {
+        version: 1,
+        scanned_at: "2026-01-01T00:00:00Z".into(),
+        project_root: tmp.path().to_string_lossy().into_owned(),
+        detected_languages: vec!["java".into()],
+        stats: Stats { total_files: 2, skipped_covered: 0, skipped_generated: 0, to_comment: 2 },
+        min_docstring_words: 0,
+        order: vec!["src/AppExCode.java".into(), "src/MyService.java".into()],
+        files,
+    };
+    codeskel::cache::write_cache(tmp.path(), &cache).unwrap();
+
+    let args0 = codeskel::cli::NextArgs {
+        cache: tmp.path().join("cache.json"),
+        target: None,
+        max_fields: 5,
+    };
+    codeskel::commands::next::run_and_capture(args0).unwrap(); // returns AppExCode
+
+    let args1 = codeskel::cli::NextArgs {
+        cache: tmp.path().join("cache.json"),
+        target: None,
+        max_fields: 5,
+    };
+    let out = codeskel::commands::next::run_and_capture(args1).unwrap();
+
+    assert!(!out.done);
+    assert_eq!(out.deps.len(), 1);
+    let dep = &out.deps[0];
+    let field_count = dep.signatures.iter().filter(|s| s.kind == "field").count();
+    assert_eq!(field_count, 5, "should keep exactly max_fields=5 fields");
+    assert_eq!(dep.fields_omitted, 3, "should report 3 omitted fields");
+}
+
+#[test]
+fn test_next_max_fields_zero_omits_all_fields() {
+    use codeskel::models::{CacheFile, FileEntry, Signature, Stats};
+    use std::collections::HashMap;
+
+    let tmp = tempdir().unwrap();
+
+    let mut dep_sigs: Vec<Signature> = vec![Signature {
+        kind: "class".into(), name: "Constants".into(),
+        modifiers: vec![], params: None, return_type: None,
+        throws: vec![], extends: None, implements: vec![], annotations: vec![],
+        line: 1, has_docstring: false, existing_word_count: 0, docstring_text: None,
+    }];
+    for i in 0..4usize {
+        dep_sigs.push(Signature {
+            kind: "field".into(), name: format!("CONST_{}", i),
+            modifiers: vec![], params: None, return_type: None,
+            throws: vec![], extends: None, implements: vec![], annotations: vec![],
+            line: i + 2, has_docstring: false, existing_word_count: 0, docstring_text: None,
+        });
+    }
+
+    let main_sig = Signature {
+        kind: "class".into(), name: "Consumer".into(),
+        modifiers: vec![], params: None, return_type: None,
+        throws: vec![], extends: None, implements: vec![], annotations: vec![],
+        line: 1, has_docstring: false, existing_word_count: 0, docstring_text: None,
+    };
+
+    let mut files = HashMap::new();
+    files.insert("src/Constants.java".into(), FileEntry {
+        path: "src/Constants.java".into(), language: "java".into(),
+        package: None, comment_coverage: 0.0, skip: false, skip_reason: None,
+        cycle_warning: false, internal_imports: vec![], signatures: dep_sigs, scanned_at: None,
+    });
+    files.insert("src/Consumer.java".into(), FileEntry {
+        path: "src/Consumer.java".into(), language: "java".into(),
+        package: None, comment_coverage: 0.0, skip: false, skip_reason: None,
+        cycle_warning: false,
+        internal_imports: vec!["src/Constants.java".into()],
+        signatures: vec![main_sig], scanned_at: None,
+    });
+
+    let cache = CacheFile {
+        version: 1,
+        scanned_at: "2026-01-01T00:00:00Z".into(),
+        project_root: tmp.path().to_string_lossy().into_owned(),
+        detected_languages: vec!["java".into()],
+        stats: Stats { total_files: 2, skipped_covered: 0, skipped_generated: 0, to_comment: 2 },
+        min_docstring_words: 0,
+        order: vec!["src/Constants.java".into(), "src/Consumer.java".into()],
+        files,
+    };
+    codeskel::cache::write_cache(tmp.path(), &cache).unwrap();
+
+    let args0 = codeskel::cli::NextArgs {
+        cache: tmp.path().join("cache.json"), target: None, max_fields: 0,
+    };
+    codeskel::commands::next::run_and_capture(args0).unwrap();
+
+    let args1 = codeskel::cli::NextArgs {
+        cache: tmp.path().join("cache.json"), target: None, max_fields: 0,
+    };
+    let out = codeskel::commands::next::run_and_capture(args1).unwrap();
+
+    let dep = &out.deps[0];
+    let field_count = dep.signatures.iter().filter(|s| s.kind == "field").count();
+    assert_eq!(field_count, 0, "max_fields=0 should omit all fields");
+    assert_eq!(dep.fields_omitted, 4);
+    assert!(dep.signatures.iter().any(|s| s.kind == "class"));
+}
+
+#[test]
+fn test_existing_word_count_thin_docstring() {
+    use std::io::Write;
+    let tmp = tempdir().unwrap();
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    let mut f = std::fs::File::create(src_dir.join("Thin.java")).unwrap();
+    writeln!(f, "/** Short doc. */").unwrap();
+    writeln!(f, "public class Thin {{}}").unwrap();
+
+    codeskel::scanner::scan(tmp.path(), &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 30,
+        cache_dir: Some(tmp.path().join(".codeskel")),
+        verbose: false,
+    }).unwrap();
+
+    let cache = codeskel::cache::read_cache(&tmp.path().join(".codeskel/cache.json")).unwrap();
+    let entry = cache.files.get("src/Thin.java").unwrap();
+    let cls = entry.signatures.iter().find(|s| s.kind == "class").unwrap();
+
+    assert!(!cls.has_docstring, "thin doc should fail min_docstring_words threshold");
+    assert!(cls.existing_word_count > 0, "existing_word_count should reflect actual word count");
+}
+
+#[test]
+fn test_existing_word_count_populated_with_min_words_zero() {
+    use std::io::Write;
+    let tmp = tempdir().unwrap();
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    let mut f = std::fs::File::create(src_dir.join("Documented.java")).unwrap();
+    writeln!(f, "/** This is a well documented class with many words here. */").unwrap();
+    writeln!(f, "public class Documented {{}}").unwrap();
+
+    codeskel::scanner::scan(tmp.path(), &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.path().join(".codeskel")),
+        verbose: false,
+    }).unwrap();
+
+    let cache = codeskel::cache::read_cache(&tmp.path().join(".codeskel/cache.json")).unwrap();
+    let entry = cache.files.get("src/Documented.java").unwrap();
+    let cls = entry.signatures.iter().find(|s| s.kind == "class").unwrap();
+
+    assert!(cls.has_docstring, "with min_docstring_words=0, any doc counts");
+    assert!(cls.existing_word_count > 0, "existing_word_count should be populated even when min_words=0");
 }

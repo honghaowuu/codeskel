@@ -99,6 +99,10 @@ pub struct NextArgs {
     /// Restrict loop to the transitive dep chain of this file (relative path)
     #[arg(long)]
     pub target: Option<String>,
+
+    /// Maximum number of field-kind signatures to include per dep entry (0 = no fields)
+    #[arg(long, default_value = "5")]
+    pub max_fields: usize,
 }
 
 #[derive(Args, Debug)]

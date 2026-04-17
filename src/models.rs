@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+fn is_zero(n: &usize) -> bool { *n == 0 }
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
@@ -76,6 +78,8 @@ pub struct Signature {
     pub annotations: Vec<String>,
     pub line: usize,
     pub has_docstring: bool,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    pub existing_word_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docstring_text: Option<String>,
 }
@@ -144,6 +148,7 @@ mod tests {
             annotations: vec![],
             line: 34,
             has_docstring: false,
+            existing_word_count: 0,
             docstring_text: None,
         };
         let json = serde_json::to_string(&sig).unwrap();

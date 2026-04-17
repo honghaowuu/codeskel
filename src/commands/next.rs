@@ -6,6 +6,8 @@ use crate::models::{FileEntry, Param, Signature};
 use crate::session::{delete_session, read_session, write_session, Session};
 use serde::{Deserialize, Serialize};
 
+fn is_zero(n: &usize) -> bool { *n == 0 }
+
 /// Signature stripped for dep context — no `has_docstring` or `line`,
 /// since Claude uses dep signatures for understanding, not for documenting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +30,8 @@ pub struct DepSignature {
     pub annotations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub docstring_text: Option<String>,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    pub existing_word_count: usize,
 }
 
 impl From<&Signature> for DepSignature {
@@ -43,6 +47,7 @@ impl From<&Signature> for DepSignature {
             implements: sig.implements.clone(),
             annotations: sig.annotations.clone(),
             docstring_text: sig.docstring_text.clone(),
+            existing_word_count: sig.existing_word_count,
         }
     }
 }
@@ -51,6 +56,8 @@ impl From<&Signature> for DepSignature {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepEntry {
     pub path: String,
+    #[serde(skip_serializing_if = "is_zero", default)]
+    pub fields_omitted: usize,
     pub signatures: Vec<DepSignature>,
 }
 
@@ -102,12 +109,12 @@ pub fn run(args: NextArgs) -> anyhow::Result<bool> {
 /// Core logic — returns a `NextOutput` instead of printing, so tests can assert on it.
 pub fn run_and_capture(args: NextArgs) -> anyhow::Result<NextOutput> {
     match args.target {
-        Some(target) => run_targeted(args.cache, target),
-        None => run_project(args.cache),
+        Some(target) => run_targeted(args.cache, target, args.max_fields),
+        None => run_project(args.cache, args.max_fields),
     }
 }
 
-fn run_project(cache_path: std::path::PathBuf) -> anyhow::Result<NextOutput> {
+fn run_project(cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Result<NextOutput> {
     let cache_dir = cache_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
@@ -172,7 +179,7 @@ fn run_project(cache_path: std::path::PathBuf) -> anyhow::Result<NextOutput> {
         .ok_or_else(|| anyhow::anyhow!("File {} in order but missing from files map", rel))?
         .clone();
 
-    let deps = build_deps(&cache, &file_entry)?;
+    let deps = build_deps(&cache, &file_entry, max_fields)?;
     let remaining = cache.order.len() - next_cursor - 1;
 
     Ok(NextOutput {
@@ -185,7 +192,7 @@ fn run_project(cache_path: std::path::PathBuf) -> anyhow::Result<NextOutput> {
     })
 }
 
-fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Result<NextOutput> {
+fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usize) -> anyhow::Result<NextOutput> {
     let cache_dir = cache_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
@@ -227,7 +234,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
             .ok_or_else(|| anyhow::anyhow!("File {} in chain but missing from files map", first))?
             .clone();
 
-        let deps = build_deps(&cache, &file_entry)?;
+        let deps = build_deps(&cache, &file_entry, max_fields)?;
         let remaining = chain.len() - 1;
 
         return Ok(NextOutput {
@@ -291,7 +298,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String) -> anyhow::Resul
         .ok_or_else(|| anyhow::anyhow!("File {} in chain but missing from files map", next_file))?
         .clone();
 
-    let deps = build_deps(&cache, &file_entry)?;
+    let deps = build_deps(&cache, &file_entry, max_fields)?;
     let remaining = chain.len() - next_cursor - 1;
 
     Ok(NextOutput {
@@ -309,6 +316,7 @@ const TOP_LEVEL_KINDS: &[&str] = &["class", "interface", "enum", "struct", "trai
 fn build_deps(
     cache: &crate::models::CacheFile,
     file_entry: &FileEntry,
+    max_fields: usize,
 ) -> anyhow::Result<Vec<DepEntry>> {
     // Attempt refs analysis; on failure, fall back to unfiltered (all deps get all sigs)
     let refs_map = match crate::commands::get::compute_refs(cache, &file_entry.path) {
@@ -326,14 +334,11 @@ fn build_deps(
         .filter_map(|dep| {
             cache.files.get(dep).map(|dep_entry| {
                 let referenced = refs_map.get(dep.as_str());
-                let signatures: Vec<DepSignature> = dep_entry.signatures.iter()
+                let all_sigs: Vec<DepSignature> = dep_entry.signatures.iter()
                     .filter(|sig| {
-                        // Top-level type declarations are always included as structural anchors
                         if TOP_LEVEL_KINDS.contains(&sig.kind.as_str()) {
                             return true;
                         }
-                        // Non-empty refs list → filter to referenced names only
-                        // Absent key or empty list → fallback: include all
                         match referenced {
                             Some(names) if !names.is_empty() => names.contains(&sig.name),
                             _ => true,
@@ -341,11 +346,20 @@ fn build_deps(
                     })
                     .map(DepSignature::from)
                     .collect();
+
+                let (non_fields, fields): (Vec<_>, Vec<_>) =
+                    all_sigs.into_iter().partition(|s| s.kind != "field");
+                let fields_total = fields.len();
+                let kept_fields: Vec<_> = fields.into_iter().take(max_fields).collect();
+                let fields_omitted = fields_total - kept_fields.len();
+
+                let signatures: Vec<DepSignature> = non_fields.into_iter().chain(kept_fields).collect();
                 if signatures.is_empty() {
                     return None;
                 }
                 Some(DepEntry {
                     path: dep_entry.path.clone(),
+                    fields_omitted,
                     signatures,
                 })
             })

@@ -274,20 +274,16 @@ public class Bar {}
 /// Re-evaluate `has_docstring` on each signature based on prose word count,
 /// then recompute coverage.  A `min_words` of 0 is a no-op.
 pub fn apply_min_docstring_words(signatures: &mut Vec<Signature>, min_words: usize) -> f64 {
-    if min_words > 0 {
-        for sig in signatures.iter_mut() {
-            if sig.has_docstring {
-                let words = sig.docstring_text.as_deref()
-                    .map(count_prose_words)
-                    .unwrap_or(0);
-                if words < min_words {
-                    sig.has_docstring = false;
-                }
-            }
+    for sig in signatures.iter_mut() {
+        let words = sig.docstring_text.as_deref()
+            .map(count_prose_words)
+            .unwrap_or(0);
+        sig.existing_word_count = words;
+        if min_words > 0 && sig.has_docstring && words < min_words {
+            sig.has_docstring = false;
         }
     }
 
-    // Recompute coverage
     let documentable: Vec<&Signature> = signatures.iter()
         .filter(|s| matches!(s.kind.as_str(),
             "class" | "interface" | "enum" | "method" | "constructor" | "field" |

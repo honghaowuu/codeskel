@@ -127,6 +127,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         });
     }
@@ -152,6 +153,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         });
     }
@@ -177,6 +179,7 @@ impl<'a> Walker<'a> {
             annotations: Vec::new(),
             line,
             has_docstring: doc.is_some(),
+            existing_word_count: 0,
             docstring_text: doc.clone(),
         });
     }
