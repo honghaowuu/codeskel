@@ -133,15 +133,16 @@ fn normalize_path(p: &str) -> String {
 }
 
 /// "src/main/java/com/example/model/User.java" → "com.example.model.User"
+/// Also handles multi-module Maven paths like "module/src/main/java/com/example/Foo.java"
 fn java_path_to_fqn(rel_path: &str) -> Option<String> {
     let path = Path::new(rel_path);
     if path.extension()?.to_str()? != "java" { return None; }
     let s = rel_path.replace('/', ".");
     let s = s.strip_suffix(".java").unwrap_or(&s);
-    // Strip common Java source root prefixes
-    for prefix in &["src.main.java.", "src.java.", "main.java.", "src."] {
-        if let Some(rest) = s.strip_prefix(prefix) {
-            return Some(rest.to_string());
+    // Find the first occurrence of a Java source root marker and strip everything before it
+    for marker in &["src.main.java.", "src.java.", "main.java.", "src."] {
+        if let Some(pos) = s.find(marker) {
+            return Some(s[pos + marker.len()..].to_string());
         }
     }
     Some(s.to_string())
@@ -201,6 +202,21 @@ mod tests {
         assert_eq!(
             r.resolve("com.example.model.User", None),
             Some("src/main/java/com/example/model/User.java".to_string())
+        );
+    }
+
+    #[test]
+    fn test_java_multi_module_resolution() {
+        // Multi-module Maven layout: module-name/src/main/java/...
+        let r = Resolver::new(
+            &Language::Java,
+            &["management/src/main/java/com/newland/modules/management/domain/operator/service/OperatorConfigService.java".to_string()],
+            &PathBuf::from("/proj"),
+            None,
+        );
+        assert_eq!(
+            r.resolve("com.newland.modules.management.domain.operator.service.OperatorConfigService", None),
+            Some("management/src/main/java/com/newland/modules/management/domain/operator/service/OperatorConfigService.java".to_string())
         );
     }
 
