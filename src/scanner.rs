@@ -130,6 +130,8 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
             internal_imports,
             signatures,
             scanned_at: None,
+            file_kind: String::new(),
+            reverse_deps: vec![],
         });
     }
 

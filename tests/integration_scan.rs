@@ -869,6 +869,7 @@ fn test_next_max_fields_truncates_fields() {
         path: "src/AppExCode.java".into(), language: "java".into(),
         package: None, comment_coverage: 0.0, skip: false, skip_reason: None,
         cycle_warning: false, internal_imports: vec![], signatures: dep_sigs, scanned_at: None,
+        file_kind: "class".into(), reverse_deps: vec![],
     });
     files.insert("src/MyService.java".into(), FileEntry {
         path: "src/MyService.java".into(), language: "java".into(),
@@ -876,6 +877,7 @@ fn test_next_max_fields_truncates_fields() {
         cycle_warning: false,
         internal_imports: vec!["src/AppExCode.java".into()],
         signatures: vec![main_sig], scanned_at: None,
+        file_kind: "class".into(), reverse_deps: vec![],
     });
 
     let cache = CacheFile {
@@ -946,6 +948,7 @@ fn test_next_max_fields_zero_omits_all_fields() {
         path: "src/Constants.java".into(), language: "java".into(),
         package: None, comment_coverage: 0.0, skip: false, skip_reason: None,
         cycle_warning: false, internal_imports: vec![], signatures: dep_sigs, scanned_at: None,
+        file_kind: "class".into(), reverse_deps: vec![],
     });
     files.insert("src/Consumer.java".into(), FileEntry {
         path: "src/Consumer.java".into(), language: "java".into(),
@@ -953,6 +956,7 @@ fn test_next_max_fields_zero_omits_all_fields() {
         cycle_warning: false,
         internal_imports: vec!["src/Constants.java".into()],
         signatures: vec![main_sig], scanned_at: None,
+        file_kind: "class".into(), reverse_deps: vec![],
     });
 
     let cache = CacheFile {

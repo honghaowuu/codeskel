@@ -99,6 +99,13 @@ pub struct FileEntry {
     pub signatures: Vec<Signature>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scanned_at: Option<String>,   // per-entry rescan timestamp (RFC3339)
+    /// Primary kind of the file's top-level declaration.
+    /// Values: "class", "interface", "abstract_class", "annotation", "enum", "other"
+    #[serde(default)]
+    pub file_kind: String,
+    /// Paths of files that implement, extend, or apply-as-annotation this file.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub reverse_deps: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,9 +186,12 @@ mod tests {
             internal_imports: vec![],
             signatures: vec![],
             scanned_at: None,
+            file_kind: "class".into(),
+            reverse_deps: vec![],
         };
         let json = serde_json::to_string(&entry).unwrap();
         assert!(!json.contains("skip_reason"), "skip_reason should be omitted when None, got: {}", json);
         assert!(!json.contains("package"), "package should be omitted when None");
+        assert!(!json.contains("reverse_deps"), "reverse_deps should be omitted when empty, got: {}", json);
     }
 }
