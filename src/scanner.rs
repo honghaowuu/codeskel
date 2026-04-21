@@ -11,6 +11,91 @@ use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+fn derive_file_kind(signatures: &[Signature]) -> String {
+    for sig in signatures {
+        match sig.kind.as_str() {
+            "interface" => return "interface".to_string(),
+            "annotation" => return "annotation".to_string(),
+            "enum" => return "enum".to_string(),
+            "class" => {
+                if sig.modifiers.contains(&"abstract".to_string()) {
+                    return "abstract_class".to_string();
+                }
+                return "class".to_string();
+            }
+            _ => {}
+        }
+    }
+    "other".to_string()
+}
+
+fn build_reverse_deps(file_entries: &mut HashMap<String, FileEntry>) {
+    // Build index: (package, simple_class_name) → rel_path
+    let mut class_index: HashMap<(String, String), String> = HashMap::new();
+    for (path, entry) in file_entries.iter() {
+        if let Some(pkg) = &entry.package {
+            for sig in &entry.signatures {
+                match sig.kind.as_str() {
+                    "class" | "interface" | "enum" | "annotation" => {
+                        class_index.insert((pkg.clone(), sig.name.clone()), path.clone());
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Collect (implementor_path, target_path) pairs
+    let mut reverse_pairs: Vec<(String, String)> = Vec::new();
+    for (implementor_path, entry) in file_entries.iter() {
+        let mut referenced_names: Vec<String> = Vec::new();
+        for sig in &entry.signatures {
+            if let Some(ext) = &sig.extends {
+                referenced_names.push(ext.clone());
+            }
+            for imp in &sig.implements {
+                referenced_names.push(imp.clone());
+            }
+        }
+        for name in referenced_names {
+            let resolved = entry.package.as_ref()
+                .and_then(|pkg| class_index.get(&(pkg.clone(), name.clone())))
+                .cloned()
+                .or_else(|| {
+                    entry.internal_imports.iter().find_map(|dep_path| {
+                        file_entries.get(dep_path).and_then(|dep_entry| {
+                            dep_entry.signatures.iter().find(|s| {
+                                s.name == name
+                                    && matches!(s.kind.as_str(), "class" | "interface" | "enum")
+                            })
+                            .map(|_| dep_path.clone())
+                        })
+                    })
+                });
+            if let Some(target) = resolved {
+                if target != *implementor_path {
+                    reverse_pairs.push((implementor_path.clone(), target));
+                }
+            }
+        }
+    }
+
+    // Apply pairs to file_entries
+    for (implementor, target) in reverse_pairs {
+        if let Some(entry) = file_entries.get_mut(&target) {
+            if !entry.reverse_deps.contains(&implementor) {
+                entry.reverse_deps.push(implementor);
+            }
+        }
+    }
+
+    // Sort for determinism
+    for entry in file_entries.values_mut() {
+        entry.reverse_deps.sort();
+    }
+}
+
 pub struct ScanConfig {
     pub forced_lang: Option<Language>,
     pub include_globs: Vec<String>,
@@ -119,6 +204,7 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
             graph.add_edge(rel_path, dep);
         }
 
+        let file_kind = derive_file_kind(&signatures);
         file_entries.insert(rel_path.clone(), FileEntry {
             path: rel_path.clone(),
             language: language.as_str().to_string(),
@@ -128,12 +214,15 @@ pub fn scan(root: &Path, cfg: &ScanConfig) -> anyhow::Result<ScanResult> {
             skip_reason,
             cycle_warning: false,
             internal_imports,
+            file_kind,
             signatures,
             scanned_at: None,
-            file_kind: String::new(),
             reverse_deps: vec![],
         });
     }
+
+    // Build reverse dependency relationships (interfaces ← implementors, etc.)
+    build_reverse_deps(&mut file_entries);
 
     // Topological sort
     let (full_order, cycle_pairs) = graph.topo_sort();
