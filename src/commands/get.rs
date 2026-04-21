@@ -122,6 +122,9 @@ fn get_chain_entry(cache: &crate::models::CacheFile, file_path: &str, index: usi
     Ok(false)
 }
 
+const REVERSE_DEP_KINDS: &[&str] = &["interface", "abstract_class", "annotation"];
+const MAX_REVERSE_DEPS: usize = 5;
+
 fn get_deps(cache: &crate::models::CacheFile, file_path: &str) -> anyhow::Result<bool> {
     let entry = cache.files.get(file_path)
         .ok_or_else(|| anyhow::anyhow!("Path '{}' not found in cache", file_path))?;
@@ -137,10 +140,26 @@ fn get_deps(cache: &crate::models::CacheFile, file_path: &str) -> anyhow::Result
         })
         .collect();
 
-    let output = json!({
+    let mut output = json!({
         "for": file_path,
         "dependencies": dependencies,
     });
+
+    if REVERSE_DEP_KINDS.contains(&entry.file_kind.as_str()) {
+        let reverse_dep_signatures: Vec<serde_json::Value> = entry.reverse_deps.iter()
+            .take(MAX_REVERSE_DEPS)
+            .filter_map(|rdep| {
+                cache.files.get(rdep).map(|rdep_entry| {
+                    json!({
+                        "path": rdep_entry.path,
+                        "signatures": rdep_entry.signatures,
+                    })
+                })
+            })
+            .collect();
+        output["reverse_dep_signatures"] = serde_json::json!(reverse_dep_signatures);
+    }
+
     println!("{}", serde_json::to_string(&output)?);
     Ok(false)
 }
