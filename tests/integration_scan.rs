@@ -1153,3 +1153,54 @@ fn test_get_deps_includes_reverse_deps_for_interface() {
         "reverse_deps must contain JpaUserRepository for the get --deps logic to work"
     );
 }
+
+#[test]
+fn test_next_includes_reverse_deps_for_interface() {
+    use codeskel::cache::read_cache;
+    use codeskel::commands::next::run_and_capture;
+    use codeskel::cli::NextArgs;
+
+    let tmp = tempdir().unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_project");
+
+    codeskel::scanner::scan(&root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache_path = tmp.path().join("cache.json");
+    let cache = read_cache(&cache_path).unwrap();
+
+    let repo_index = cache.order.iter().position(|p| {
+        p.contains("UserRepository") && !p.contains("Jpa")
+    }).expect("UserRepository must be in order");
+
+    for _ in 0..=repo_index {
+        let output = run_and_capture(NextArgs {
+            cache: cache_path.clone(),
+            target: None,
+            max_fields: 20,
+        }).unwrap();
+        assert!(!output.done, "should not be done before reaching UserRepository");
+
+        if output.file.as_ref().map(|f| f.path.contains("UserRepository") && !f.path.contains("Jpa")).unwrap_or(false) {
+            assert!(
+                !output.reverse_deps.is_empty(),
+                "next output for UserRepository interface must have reverse_deps"
+            );
+            assert!(
+                output.reverse_deps.iter().any(|e| e.path.contains("JpaUserRepository")),
+                "reverse_deps must include JpaUserRepository, got: {:?}",
+                output.reverse_deps.iter().map(|e| &e.path).collect::<Vec<_>>()
+            );
+            return;
+        }
+    }
+    panic!("UserRepository was not returned by next within expected iterations");
+}
