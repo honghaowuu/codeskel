@@ -1043,3 +1043,80 @@ fn test_existing_word_count_populated_with_min_words_zero() {
     assert!(cls.has_docstring, "with min_docstring_words=0, any doc counts");
     assert!(cls.existing_word_count > 0, "existing_word_count should be populated even when min_words=0");
 }
+
+#[test]
+fn test_interface_has_file_kind() {
+    use codeskel::cache::read_cache;
+
+    let tmp = tempdir().unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_project");
+
+    codeskel::scanner::scan(&root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache = read_cache(&tmp.path().join("cache.json")).unwrap();
+
+    let repo_path = cache.files.keys()
+        .find(|p| p.contains("UserRepository") && !p.contains("Jpa"))
+        .cloned()
+        .expect("UserRepository.java must be in cache");
+
+    let entry = cache.files.get(&repo_path).unwrap();
+    assert_eq!(entry.file_kind, "interface",
+        "UserRepository should have file_kind=interface, got: {}", entry.file_kind);
+}
+
+#[test]
+fn test_interface_reverse_deps_populated() {
+    use codeskel::cache::read_cache;
+
+    let tmp = tempdir().unwrap();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/java_project");
+
+    codeskel::scanner::scan(&root, &codeskel::scanner::ScanConfig {
+        forced_lang: None,
+        include_globs: vec![],
+        exclude_globs: vec![],
+        min_coverage: 0.0,
+        min_docstring_words: 0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    }).unwrap();
+
+    let cache = read_cache(&tmp.path().join("cache.json")).unwrap();
+
+    // UserRepository should have JpaUserRepository in reverse_deps
+    let repo_path = cache.files.keys()
+        .find(|p| p.contains("UserRepository") && !p.contains("Jpa"))
+        .cloned()
+        .expect("UserRepository.java must be in cache");
+
+    let entry = cache.files.get(&repo_path).unwrap();
+    assert!(
+        entry.reverse_deps.iter().any(|p| p.contains("JpaUserRepository")),
+        "UserRepository.reverse_deps should contain JpaUserRepository, got: {:?}",
+        entry.reverse_deps
+    );
+
+    // Base.java should have Service.java in reverse_deps (extends relationship)
+    let base_path = cache.files.keys()
+        .find(|p| p.contains("Base"))
+        .cloned()
+        .expect("Base.java must be in cache");
+
+    let base_entry = cache.files.get(&base_path).unwrap();
+    assert!(
+        base_entry.reverse_deps.iter().any(|p| p.contains("Service")),
+        "Base.reverse_deps should contain Service, got: {:?}",
+        base_entry.reverse_deps
+    );
+}
