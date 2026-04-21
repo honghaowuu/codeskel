@@ -98,6 +98,8 @@ pub struct NextOutput {
     pub remaining: usize,
     pub file: Option<NextFileEntry>,
     pub deps: Vec<DepEntry>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub reverse_deps: Vec<DepEntry>,
 }
 
 pub fn run(args: NextArgs) -> anyhow::Result<bool> {
@@ -164,6 +166,7 @@ fn run_project(cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Res
             remaining: 0,
             file: None,
             deps: vec![],
+            reverse_deps: vec![],
         });
     }
 
@@ -179,7 +182,7 @@ fn run_project(cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Res
         .ok_or_else(|| anyhow::anyhow!("File {} in order but missing from files map", rel))?
         .clone();
 
-    let deps = build_deps(&cache, &file_entry, max_fields)?;
+    let (deps, reverse_deps) = build_deps_with_reverse(&cache, &file_entry, max_fields)?;
     let remaining = cache.order.len() - next_cursor - 1;
 
     Ok(NextOutput {
@@ -189,6 +192,7 @@ fn run_project(cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Res
         remaining,
         file: Some(NextFileEntry::from(&file_entry)),
         deps,
+        reverse_deps,
     })
 }
 
@@ -234,7 +238,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usiz
             .ok_or_else(|| anyhow::anyhow!("File {} in chain but missing from files map", first))?
             .clone();
 
-        let deps = build_deps(&cache, &file_entry, max_fields)?;
+        let (deps, reverse_deps) = build_deps_with_reverse(&cache, &file_entry, max_fields)?;
         let remaining = chain.len() - 1;
 
         return Ok(NextOutput {
@@ -244,6 +248,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usiz
             remaining,
             file: Some(NextFileEntry::from(&file_entry)),
             deps,
+            reverse_deps,
         });
     }
 
@@ -276,6 +281,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usiz
                 remaining: 0,
                 file: None,
                 deps: vec![],
+                reverse_deps: vec![],
             });
         }
         let candidate = &chain[next_cursor];
@@ -298,7 +304,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usiz
         .ok_or_else(|| anyhow::anyhow!("File {} in chain but missing from files map", next_file))?
         .clone();
 
-    let deps = build_deps(&cache, &file_entry, max_fields)?;
+    let (deps, reverse_deps) = build_deps_with_reverse(&cache, &file_entry, max_fields)?;
     let remaining = chain.len() - next_cursor - 1;
 
     Ok(NextOutput {
@@ -308,10 +314,13 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usiz
         remaining,
         file: Some(NextFileEntry::from(&file_entry)),
         deps,
+        reverse_deps,
     })
 }
 
 const TOP_LEVEL_KINDS: &[&str] = &["class", "interface", "enum", "struct", "trait", "type", "type_alias"];
+const REVERSE_DEP_KINDS: &[&str] = &["interface", "abstract_class", "annotation"];
+const MAX_REVERSE_DEPS: usize = 5;
 
 fn build_deps(
     cache: &crate::models::CacheFile,
@@ -368,4 +377,42 @@ fn build_deps(
         .collect();
 
     Ok(entries)
+}
+
+fn build_deps_with_reverse(
+    cache: &crate::models::CacheFile,
+    file_entry: &FileEntry,
+    max_fields: usize,
+) -> anyhow::Result<(Vec<DepEntry>, Vec<DepEntry>)> {
+    let deps = build_deps(cache, file_entry, max_fields)?;
+
+    let reverse_deps = if REVERSE_DEP_KINDS.contains(&file_entry.file_kind.as_str()) {
+        file_entry.reverse_deps.iter()
+            .take(MAX_REVERSE_DEPS)
+            .filter_map(|rdep| {
+                cache.files.get(rdep).map(|rdep_entry| {
+                    let all_sigs: Vec<DepSignature> = rdep_entry.signatures.iter()
+                        .map(DepSignature::from)
+                        .collect();
+                    let (non_fields, fields): (Vec<_>, Vec<_>) =
+                        all_sigs.into_iter().partition(|s| s.kind != "field");
+                    let fields_total = fields.len();
+                    let kept_fields: Vec<_> = fields.into_iter().take(max_fields).collect();
+                    let fields_omitted = fields_total - kept_fields.len();
+                    let signatures: Vec<DepSignature> = non_fields.into_iter().chain(kept_fields).collect();
+                    if signatures.is_empty() { return None; }
+                    Some(DepEntry {
+                        path: rdep_entry.path.clone(),
+                        fields_omitted,
+                        signatures,
+                    })
+                })
+                .flatten()
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    Ok((deps, reverse_deps))
 }
