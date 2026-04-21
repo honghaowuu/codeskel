@@ -72,7 +72,9 @@ codeskel get .codeskel/cache.json --refs src/main/java/com/example/service/UserS
   "comment_coverage": 0.1,
   "skip": false,
   "cycle_warning": false,
+  "file_kind": "class",
   "internal_imports": ["src/main/java/com/example/base/Entity.java"],
+  "reverse_deps": [],
   "signatures": [
     {
       "kind": "class",
@@ -144,6 +146,23 @@ Keys are relative paths of internal dep files. Values are symbol names (class, m
 }
 ```
 
+For **interfaces**, **abstract classes**, and **annotation definitions** (`file_kind` is `"interface"`, `"abstract_class"`, or `"annotation"`), `--deps` also includes a `reverse_dep_signatures` field — signatures of files that implement, extend, or apply this type. This gives the LLM meaningful context for files that have few or no imports of their own:
+
+```json
+{
+  "for": "src/main/java/com/example/repo/UserRepository.java",
+  "dependencies": [],
+  "reverse_dep_signatures": [
+    {
+      "path": "src/main/java/com/example/repo/JpaUserRepository.java",
+      "signatures": [ ... ]
+    }
+  ]
+}
+```
+
+Up to 5 reverse deps are included, sorted by path. Same-package `implements`/`extends` relationships are resolved without requiring an explicit import statement (Java only; other languages to follow).
+
 ### 3. Rescan after commenting
 
 After the LLM writes docstrings to a file, update the cache:
@@ -178,7 +197,13 @@ Output is compact JSON (single line). The `file` object contains `path`, `langua
 
 `deps[].signatures` are filtered to only the symbols the current file actually references, plus top-level type declarations (class/struct/interface/etc.) as structural anchors. This means Claude sees exactly the context it needs without noise from unreferenced methods. Signatures in `deps` include `docstring_text` when present so Claude can read existing documentation without opening dep files. `has_docstring` and `line` are omitted from dep signatures.
 
-`file` and `deps` are `null` / `[]` when `done` is `true`. `remaining` counts files not yet returned. `mode` is `"project"` or `"targeted"`.
+When the current file is an interface, abstract class, or annotation (`file_kind` is `"interface"`, `"abstract_class"`, or `"annotation"`), the output also includes a `reverse_deps` field with signatures of implementing/extending files (up to 5, Java only). This gives the LLM meaningful context for types that have no imports of their own:
+
+```json
+{"done":false,"mode":"project","index":0,"remaining":3,"file":{"path":"src/.../UserRepository.java","language":"java","comment_coverage":0.0,"signatures":[...]},"deps":[],"reverse_deps":[{"path":"src/.../JpaUserRepository.java","signatures":[...]}]}
+```
+
+`file` and `deps` are `null` / `[]` when `done` is `true`. `reverse_deps` is omitted when empty. `remaining` counts files not yet returned. `mode` is `"project"` or `"targeted"`.
 
 **Options:**
 
