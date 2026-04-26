@@ -1204,3 +1204,72 @@ fn test_next_includes_reverse_deps_for_interface() {
     }
     panic!("UserRepository was not returned by next within expected iterations");
 }
+
+// --- Phase A envelope codes -------------------------------------------------
+//
+// Cover each of the four CodeskelError variants the `/comment` skill branches on:
+// CACHE_NOT_FOUND, SESSION_CORRUPT, PROJECT_ROOT_MISSING, TARGET_NOT_IN_TREE.
+
+#[test]
+fn envelope_cache_not_found_via_get() {
+    let tmp = tempdir().unwrap();
+    let result = codeskel::commands::get::run(codeskel::cli::GetArgs {
+        cache_path: tmp.path().join("does-not-exist.json"),
+        index: Some(0),
+        path: None, deps: None, chain: None, refs: None,
+    });
+    let err = result.expect_err("missing cache must error");
+    let ce = err.downcast_ref::<codeskel::error::CodeskelError>()
+        .expect("error must be a CodeskelError");
+    assert_eq!(ce.code(), "CACHE_NOT_FOUND");
+}
+
+#[test]
+fn envelope_session_corrupt_via_next() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_project", tmp.path());
+    // Write a non-JSON session file so try_read_session can't parse it.
+    std::fs::write(tmp.path().join("session.json"), b"{not json").unwrap();
+
+    let result = codeskel::commands::next::run_and_capture(codeskel::cli::NextArgs {
+        cache: tmp.path().join("cache.json"),
+        target: None,
+        max_fields: 0,
+    });
+    let err = result.expect_err("corrupt session must error");
+    let ce = err.downcast_ref::<codeskel::error::CodeskelError>()
+        .expect("error must be a CodeskelError");
+    assert_eq!(ce.code(), "SESSION_CORRUPT");
+}
+
+#[test]
+fn envelope_project_root_missing_via_scan() {
+    let tmp = tempdir().unwrap();
+    let bogus = tmp.path().join("never-existed");
+    let result = codeskel::commands::scan::run(codeskel::cli::ScanArgs {
+        project_root: bogus,
+        lang: None, include: vec![], exclude: vec![],
+        min_coverage: 0.0, min_docstring_words: 0,
+        cache_dir: Some(tmp.path().to_path_buf()),
+        verbose: false,
+    });
+    let err = result.expect_err("missing project root must error");
+    let ce = err.downcast_ref::<codeskel::error::CodeskelError>()
+        .expect("error must be a CodeskelError");
+    assert_eq!(ce.code(), "PROJECT_ROOT_MISSING");
+}
+
+#[test]
+fn envelope_target_not_in_tree_via_next() {
+    let tmp = tempdir().unwrap();
+    make_cache_in("java_project", tmp.path());
+    let result = codeskel::commands::next::run_and_capture(codeskel::cli::NextArgs {
+        cache: tmp.path().join("cache.json"),
+        target: Some("does/not/exist.java".into()),
+        max_fields: 0,
+    });
+    let err = result.expect_err("unknown target must error");
+    let ce = err.downcast_ref::<codeskel::error::CodeskelError>()
+        .expect("error must be a CodeskelError");
+    assert_eq!(ce.code(), "TARGET_NOT_IN_TREE");
+}

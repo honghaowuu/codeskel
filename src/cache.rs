@@ -1,3 +1,4 @@
+use crate::error::CodeskelError;
 use crate::models::CacheFile;
 use std::path::Path;
 use anyhow::Context;
@@ -12,8 +13,18 @@ pub fn write_cache(cache_dir: &Path, cache: &CacheFile) -> anyhow::Result<()> {
 }
 
 pub fn read_cache(cache_path: &Path) -> anyhow::Result<CacheFile> {
-    let content = std::fs::read_to_string(cache_path)
-        .with_context(|| format!("Cannot read cache from {}", cache_path.display()))?;
+    let content = match std::fs::read_to_string(cache_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(CodeskelError::CacheNotFound(cache_path.to_path_buf()).into());
+        }
+        Err(e) => {
+            return Err(anyhow::Error::new(e).context(format!(
+                "Cannot read cache from {}",
+                cache_path.display()
+            )));
+        }
+    };
     let cache: CacheFile = serde_json::from_str(&content)
         .with_context(|| format!("Failed to parse cache at {}", cache_path.display()))?;
     Ok(cache)

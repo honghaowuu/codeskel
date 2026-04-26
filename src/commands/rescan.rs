@@ -9,7 +9,9 @@ use chrono::Utc;
 use std::path::Path;
 
 /// Re-parse a single file and update its cache entry.
-/// Returns `true` if a warning was emitted (file unreadable / language unknown / not in cache).
+/// Returns `Some(warning_text)` if a warning was emitted (file unreadable /
+/// language unknown / not in cache); the text is also written to stderr.
+/// Returns `None` on clean success.
 ///
 /// Updates: `comment_coverage`, `signatures`, `scanned_at`, `skip`, `skip_reason`.
 /// - Generated files: sets `skip = true, skip_reason = "generated"`.
@@ -17,23 +19,25 @@ use std::path::Path;
 ///   reapplied because `min_coverage` is not stored in the cache; run a full `scan` to re-establish it.
 /// Does NOT update: `internal_imports`, `package`, `language`, `cycle_warning`.
 /// Does NOT recompute stats or write cache — callers must do that.
-pub fn rescan_one(cache: &mut CacheFile, rel: &str) -> bool {
+pub fn rescan_one(cache: &mut CacheFile, rel: &str) -> Option<String> {
     let root = Path::new(&cache.project_root);
     let abs = root.join(rel);
 
     let content = match std::fs::read_to_string(&abs) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[codeskel] Warning: cannot read {}: {}", rel, e);
-            return true;
+            let msg = format!("cannot read {}: {}", rel, e);
+            eprintln!("[codeskel] Warning: {}", msg);
+            return Some(msg);
         }
     };
 
     let lang = match detect_language(&abs) {
         Some(l) => l,
         None => {
-            eprintln!("[codeskel] Warning: cannot detect language for {}", rel);
-            return true;
+            let msg = format!("cannot detect language for {}", rel);
+            eprintln!("[codeskel] Warning: {}", msg);
+            return Some(msg);
         }
     };
 
@@ -54,11 +58,12 @@ pub fn rescan_one(cache: &mut CacheFile, rel: &str) -> bool {
             entry.skip_reason = None;
         }
     } else {
-        eprintln!("[codeskel] Warning: {} not found in cache, skipping", rel);
-        return true;
+        let msg = format!("{} not found in cache, skipping", rel);
+        eprintln!("[codeskel] Warning: {}", msg);
+        return Some(msg);
     }
 
-    false
+    None
 }
 
 /// Recompute `cache.stats` from current `cache.files` and `cache.order`.
@@ -88,7 +93,7 @@ pub fn run(args: RescanArgs) -> anyhow::Result<bool> {
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
 
-    let mut warnings = false;
+    let mut warnings: Vec<String> = Vec::new();
     for file_path in &args.file_paths {
         let rel = if file_path.is_absolute() {
             match file_path.strip_prefix(Path::new(&cache.project_root)) {
@@ -99,13 +104,21 @@ pub fn run(args: RescanArgs) -> anyhow::Result<bool> {
             file_path.to_string_lossy().into_owned()
         };
 
-        if rescan_one(&mut cache, &rel) {
-            warnings = true;
+        if let Some(w) = rescan_one(&mut cache, &rel) {
+            warnings.push(w);
         }
     }
 
     recompute_stats(&mut cache);
     write_cache(&cache_dir, &cache)?;
     eprintln!("[codeskel] Rescanned {} file(s)", args.file_paths.len());
-    Ok(warnings)
+
+    let payload = serde_json::json!({ "rescanned": args.file_paths.len() });
+    if warnings.is_empty() {
+        println!("{}", crate::envelope::format_ok(payload));
+        Ok(false)
+    } else {
+        println!("{}", crate::envelope::format_ok_with_warnings(payload, warnings));
+        Ok(true)
+    }
 }

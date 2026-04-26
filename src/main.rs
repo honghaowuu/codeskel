@@ -1,5 +1,7 @@
 use clap::Parser;
 use codeskel::cli::{Cli, Commands};
+use codeskel::envelope;
+use codeskel::error::CodeskelError;
 
 fn main() {
     let cli = Cli::parse();
@@ -17,8 +19,10 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
+            if let Some(ce) = e.downcast_ref::<CodeskelError>() {
+                envelope::print_err_coded(ce.code(), &ce.to_string(), ce.hint())
+            }
+            envelope::print_err(&format!("{e:#}"), None)
         }
     }
 }

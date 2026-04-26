@@ -179,6 +179,9 @@ fn extract_output(
 
 pub fn run(args: PomArgs) -> anyhow::Result<bool> {
     let project_root = args.project_root;
+    if !project_root.is_dir() {
+        return Err(crate::error::CodeskelError::ProjectRootMissing(project_root).into());
+    }
     let pom_path = project_root.join("pom.xml");
 
     if !pom_path.exists() {
@@ -252,13 +255,11 @@ pub fn run(args: PomArgs) -> anyhow::Result<bool> {
             true,
         )?;
 
-        let json = serde_json::to_string(&output)?;
-        println!("{}", json);
+        println!("{}", crate::envelope::format_ok(serde_json::to_value(&output)?));
         return Ok(false);
     } else {
         let output = extract_output(&pom_path, &content, None, false)?;
-        let json = serde_json::to_string(&output)?;
-        println!("{}", json);
+        println!("{}", crate::envelope::format_ok(serde_json::to_value(&output)?));
         return Ok(false);
     }
 }

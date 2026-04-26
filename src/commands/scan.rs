@@ -1,10 +1,15 @@
 use crate::cli::ScanArgs;
+use crate::error::CodeskelError;
 use crate::lang::lang_from_str;
 use crate::models::ScanSummary;
 use crate::scanner::{scan, ScanConfig};
 use crate::session::delete_session;
 
 pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
+    if !args.project_root.is_dir() {
+        return Err(CodeskelError::ProjectRootMissing(args.project_root.clone()).into());
+    }
+
     // Validate --lang if provided
     let forced_lang = match &args.lang {
         Some(s) => {
@@ -41,6 +46,6 @@ pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
         stats: result.stats,
     };
 
-    println!("{}", serde_json::to_string(&summary)?);
+    println!("{}", crate::envelope::format_ok(serde_json::to_value(&summary)?));
     Ok(false)
 }

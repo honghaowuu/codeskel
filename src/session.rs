@@ -1,3 +1,4 @@
+use crate::error::CodeskelError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -32,6 +33,26 @@ pub fn read_session(cache_dir: &Path) -> Session {
             }
         }
         Err(_) => Session::default(),
+    }
+}
+
+/// Strict version of `read_session` for callers that need to surface a
+/// `SESSION_CORRUPT` envelope code instead of silently resetting. Returns
+/// `Ok(None)` when no session exists, `Ok(Some(_))` when one was parsed,
+/// and `Err(CodeskelError::SessionCorrupt)` when the file is unparseable.
+pub fn try_read_session(cache_dir: &Path) -> anyhow::Result<Option<Session>> {
+    let path = cache_dir.join("session.json");
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(anyhow::Error::new(e).context(format!(
+            "Cannot read session from {}",
+            path.display()
+        ))),
+    };
+    match serde_json::from_str::<Session>(&content) {
+        Ok(s) => Ok(Some(s)),
+        Err(_) => Err(CodeskelError::SessionCorrupt(path).into()),
     }
 }
 
