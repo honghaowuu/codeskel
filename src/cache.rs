@@ -1,3 +1,4 @@
+use crate::error::CodeskelError;
 use crate::models::CacheFile;
 use std::path::Path;
 use anyhow::Context;
@@ -6,14 +7,64 @@ pub fn write_cache(cache_dir: &Path, cache: &CacheFile) -> anyhow::Result<()> {
     std::fs::create_dir_all(cache_dir)?;
     let path = cache_dir.join("cache.json");
     let json = serde_json::to_string_pretty(cache)?;
-    std::fs::write(&path, json)
+    atomic_write(&path, json.as_bytes())
         .with_context(|| format!("Cannot write cache to {}", path.display()))?;
     Ok(())
 }
 
+/// Write `contents` to `path` atomically: write to a sibling tempfile, then
+/// rename. A SIGKILL between write and rename leaves the tempfile but never a
+/// half-written `path`, so concurrent readers always see a complete file.
+pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "out".into());
+    let tmp = parent.join(format!(".{}.tmp.{}", file_name, std::process::id()));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(contents)?;
+        f.sync_all().ok();
+    }
+    std::fs::rename(&tmp, path)
+}
+
+/// Verify that `cache.project_root` (canonicalized) matches the given
+/// canonicalized cwd. Returns `Err(ProjectRootMismatch)` on mismatch — used by
+/// `next` to refuse caches built for a different project. If either path can't
+/// be canonicalized (e.g. the cache root no longer exists), falls back to the
+/// raw stored string for the comparison.
+pub fn verify_project_root_matches(cache: &CacheFile, cwd: &Path) -> anyhow::Result<()> {
+    let cwd_canonical = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let cache_root_path = std::path::Path::new(&cache.project_root);
+    let cache_canonical = cache_root_path
+        .canonicalize()
+        .unwrap_or_else(|_| cache_root_path.to_path_buf());
+    if cwd_canonical != cache_canonical {
+        return Err(CodeskelError::ProjectRootMismatch {
+            cache_root: cache.project_root.clone(),
+            cwd: cwd.display().to_string(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 pub fn read_cache(cache_path: &Path) -> anyhow::Result<CacheFile> {
-    let content = std::fs::read_to_string(cache_path)
-        .with_context(|| format!("Cannot read cache from {}", cache_path.display()))?;
+    let content = match std::fs::read_to_string(cache_path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(CodeskelError::CacheNotFound(cache_path.to_path_buf()).into());
+        }
+        Err(e) => {
+            return Err(anyhow::Error::new(e).context(format!(
+                "Cannot read cache from {}",
+                cache_path.display()
+            )));
+        }
+    };
     let cache: CacheFile = serde_json::from_str(&content)
         .with_context(|| format!("Failed to parse cache at {}", cache_path.display()))?;
     Ok(cache)

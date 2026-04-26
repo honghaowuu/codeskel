@@ -1,10 +1,15 @@
 use crate::cli::ScanArgs;
+use crate::error::CodeskelError;
 use crate::lang::lang_from_str;
 use crate::models::ScanSummary;
 use crate::scanner::{scan, ScanConfig};
 use crate::session::delete_session;
 
 pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
+    if !args.project_root.is_dir() {
+        return Err(CodeskelError::ProjectRootMissing(args.project_root.clone()).into());
+    }
+
     // Validate --lang if provided
     let forced_lang = match &args.lang {
         Some(s) => {
@@ -16,6 +21,16 @@ pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
         }
         None => None,
     };
+
+    // The scan walks the project before we know the final cache_dir, so the
+    // lock has to be acquired against the resolved path. ScanConfig.cache_dir
+    // (if Some) is the destination; otherwise it falls back to
+    // `<project_root>/.codeskel/`. Mirror that here so the lock covers the
+    // window between scan() finishing and the session being deleted.
+    let lock_dir = args.cache_dir
+        .clone()
+        .unwrap_or_else(|| args.project_root.join(".codeskel"));
+    let _lock = crate::lockfile::lock_cache_dir(&lock_dir)?;
 
     let result = scan(
         &args.project_root,
@@ -41,6 +56,6 @@ pub fn run(args: ScanArgs) -> anyhow::Result<bool> {
         stats: result.stats,
     };
 
-    println!("{}", serde_json::to_string(&summary)?);
+    println!("{}", crate::envelope::format_ok(serde_json::to_value(&summary)?));
     Ok(false)
 }
