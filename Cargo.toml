@@ -32,6 +32,7 @@ chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 thiserror = "1"
 roxmltree = "0.19"
+fs2 = "0.4"
 
 [dev-dependencies]
 tempfile = "=3.14.0"

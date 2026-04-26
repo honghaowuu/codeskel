@@ -7,9 +7,28 @@ pub fn write_cache(cache_dir: &Path, cache: &CacheFile) -> anyhow::Result<()> {
     std::fs::create_dir_all(cache_dir)?;
     let path = cache_dir.join("cache.json");
     let json = serde_json::to_string_pretty(cache)?;
-    std::fs::write(&path, json)
+    atomic_write(&path, json.as_bytes())
         .with_context(|| format!("Cannot write cache to {}", path.display()))?;
     Ok(())
+}
+
+/// Write `contents` to `path` atomically: write to a sibling tempfile, then
+/// rename. A SIGKILL between write and rename leaves the tempfile but never a
+/// half-written `path`, so concurrent readers always see a complete file.
+pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "out".into());
+    let tmp = parent.join(format!(".{}.tmp.{}", file_name, std::process::id()));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(contents)?;
+        f.sync_all().ok();
+    }
+    std::fs::rename(&tmp, path)
 }
 
 pub fn read_cache(cache_path: &Path) -> anyhow::Result<CacheFile> {

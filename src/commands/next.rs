@@ -121,6 +121,7 @@ fn run_project(cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Res
     let cache_dir = cache_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
+    let _lock = crate::lockfile::lock_cache_dir(&cache_dir)?;
 
     let mut cache = read_cache(&cache_path)?;
     let session = try_read_session(&cache_dir)?.unwrap_or_default();
@@ -201,6 +202,7 @@ fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usiz
     let cache_dir = cache_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
+    let _lock = crate::lockfile::lock_cache_dir(&cache_dir)?;
 
     let mut cache = read_cache(&cache_path)?;
 

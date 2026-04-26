@@ -88,10 +88,11 @@ pub fn recompute_stats(cache: &mut CacheFile) {
 }
 
 pub fn run(args: RescanArgs) -> anyhow::Result<bool> {
-    let mut cache = read_cache(&args.cache_path)?;
     let cache_dir = args.cache_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
+    let _lock = crate::lockfile::lock_cache_dir(&cache_dir)?;
+    let mut cache = read_cache(&args.cache_path)?;
 
     let mut warnings: Vec<String> = Vec::new();
     for file_path in &args.file_paths {

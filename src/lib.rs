@@ -6,6 +6,7 @@ pub mod error;
 pub mod generated;
 pub mod graph;
 pub mod lang;
+pub mod lockfile;
 pub mod models;
 pub mod parsers;
 pub mod refs;

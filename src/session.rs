@@ -60,7 +60,7 @@ pub fn write_session(cache_dir: &Path, session: &Session) -> anyhow::Result<()> 
     std::fs::create_dir_all(cache_dir)?;
     let path = cache_dir.join("session.json");
     let json = serde_json::to_string_pretty(session)?;
-    std::fs::write(&path, json)?;
+    crate::cache::atomic_write(&path, json.as_bytes())?;
     Ok(())
 }
 
