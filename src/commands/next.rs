@@ -1,4 +1,4 @@
-use crate::cache::{read_cache, write_cache};
+use crate::cache::{read_cache, verify_project_root_matches, write_cache};
 use crate::cli::NextArgs;
 use crate::commands::get::chain_order;
 use crate::commands::rescan::{rescan_one, recompute_stats};
@@ -109,21 +109,33 @@ pub fn run(args: NextArgs) -> anyhow::Result<bool> {
     Ok(false)
 }
 
-/// Core logic — returns a `NextOutput` instead of printing, so tests can assert on it.
+/// Core logic — returns a `NextOutput` instead of printing. Reads cwd from
+/// the environment for the project-root fingerprint check; tests that need to
+/// run against a cache built for a different directory should call
+/// `run_and_capture_in` with an explicit cwd.
 pub fn run_and_capture(args: NextArgs) -> anyhow::Result<NextOutput> {
+    let cwd = std::env::current_dir()?;
+    run_and_capture_in(&cwd, args)
+}
+
+/// Variant of `run_and_capture` that uses an explicit cwd for the project-root
+/// fingerprint check. Production code goes through `run_and_capture` (and main);
+/// this entry point exists so tests can pass a fixture path as the "cwd".
+pub fn run_and_capture_in(cwd: &std::path::Path, args: NextArgs) -> anyhow::Result<NextOutput> {
     match args.target {
-        Some(target) => run_targeted(args.cache, target, args.max_fields),
-        None => run_project(args.cache, args.max_fields),
+        Some(target) => run_targeted(cwd, args.cache, target, args.max_fields),
+        None => run_project(cwd, args.cache, args.max_fields),
     }
 }
 
-fn run_project(cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Result<NextOutput> {
+fn run_project(cwd: &std::path::Path, cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Result<NextOutput> {
     let cache_dir = cache_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
     let _lock = crate::lockfile::lock_cache_dir(&cache_dir)?;
 
     let mut cache = read_cache(&cache_path)?;
+    verify_project_root_matches(&cache, cwd)?;
     let session = try_read_session(&cache_dir)?.unwrap_or_default();
 
     // Mismatch: session was in targeted mode → warn and restart project mode from index 0
@@ -198,13 +210,14 @@ fn run_project(cache_path: std::path::PathBuf, max_fields: usize) -> anyhow::Res
     })
 }
 
-fn run_targeted(cache_path: std::path::PathBuf, target: String, max_fields: usize) -> anyhow::Result<NextOutput> {
+fn run_targeted(cwd: &std::path::Path, cache_path: std::path::PathBuf, target: String, max_fields: usize) -> anyhow::Result<NextOutput> {
     let cache_dir = cache_path.parent()
         .ok_or_else(|| anyhow::anyhow!("Invalid cache path: no parent directory"))?
         .to_path_buf();
     let _lock = crate::lockfile::lock_cache_dir(&cache_dir)?;
 
     let mut cache = read_cache(&cache_path)?;
+    verify_project_root_matches(&cache, cwd)?;
 
     // Error if target not in cache
     if !cache.files.contains_key(&target) {

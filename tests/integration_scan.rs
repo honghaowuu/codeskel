@@ -308,7 +308,7 @@ fn test_refs_for_userservice() {
 
 // ── codeskel next tests ──────────────────────────────────────────────
 
-fn make_cache_in(fixture: &str, tmp: &std::path::Path) {
+fn make_cache_in(fixture: &str, tmp: &std::path::Path) -> PathBuf {
     let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(fixture);
@@ -321,19 +321,20 @@ fn make_cache_in(fixture: &str, tmp: &std::path::Path) {
         cache_dir: Some(tmp.to_path_buf()),
         verbose: false,
     }).unwrap();
+    fixture_root
 }
 
 #[test]
 fn test_next_bootstrap_returns_index_0() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_project", tmp.path());
+    let fixture_root = make_cache_in("java_project", tmp.path());
 
     let cache_path = tmp.path().join("cache.json");
     // No session.json yet
     assert!(!tmp.path().join("session.json").exists());
 
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    let output = codeskel::commands::next::run_and_capture(args).unwrap();
+    let output = codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap();
 
     assert!(!output.done, "bootstrap should not be done");
     assert_eq!(output.index, Some(0), "bootstrap returns index 0");
@@ -363,7 +364,7 @@ fn test_next_empty_cache_returns_done() {
     codeskel::cache::write_cache(tmp.path(), &cache).unwrap();
 
     let args = codeskel::cli::NextArgs { cache: tmp.path().join("cache.json"), target: None, max_fields: 0 };
-    let output = codeskel::commands::next::run_and_capture(args).unwrap();
+    let output = codeskel::commands::next::run_and_capture_in(tmp.path(), args).unwrap();
 
     assert!(output.done, "empty cache → done immediately");
     assert_eq!(output.index, None);
@@ -374,12 +375,12 @@ fn test_next_empty_cache_returns_done() {
 #[test]
 fn test_next_advance_rescans_and_returns_next() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     // Bootstrap: index 0
     let args0 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    let out0 = codeskel::commands::next::run_and_capture(args0).unwrap();
+    let out0 = codeskel::commands::next::run_and_capture_in(&fixture_root, args0).unwrap();
     assert!(!out0.done);
     assert_eq!(out0.index, Some(0));
 
@@ -392,7 +393,7 @@ fn test_next_advance_rescans_and_returns_next() {
     // Advance: index 1 — should rescan index 0
     std::thread::sleep(std::time::Duration::from_millis(10)); // ensure timestamp advances
     let args1 = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    let out1 = codeskel::commands::next::run_and_capture(args1).unwrap();
+    let out1 = codeskel::commands::next::run_and_capture_in(&fixture_root, args1).unwrap();
     assert_eq!(out1.index, Some(1), "second call must return index 1");
 
     let scanned_after = {
@@ -427,13 +428,13 @@ fn test_next_done_after_last_file() {
 
     // Bootstrap
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    codeskel::commands::next::run_and_capture(args).unwrap();
+    codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap();
 
     // Advance past all remaining files
     let mut last_output = None;
     for _ in 0..n {
         let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-        last_output = Some(codeskel::commands::next::run_and_capture(args).unwrap());
+        last_output = Some(codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap());
     }
 
     let done_output = last_output.unwrap();
@@ -454,7 +455,7 @@ fn test_targeted_bootstrap_returns_first_dep() {
     // java_refs_project: UserService.java imports User.java and UserRepository.java
     // chain should be [User.java, UserRepository.java, UserService.java] (topo order)
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -464,7 +465,7 @@ fn test_targeted_bootstrap_returns_first_dep() {
         .expect("UserService must be in order");
 
     let args = make_targeted_args(cache_path.clone(), &target);
-    let out = codeskel::commands::next::run_and_capture(args).unwrap();
+    let out = codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap();
 
     assert!(!out.done, "bootstrap must not be done");
     assert_eq!(out.mode, "targeted");
@@ -482,7 +483,7 @@ fn test_targeted_bootstrap_returns_first_dep() {
 fn test_targeted_no_deps_chain_is_target_only() {
     // Use a file with no internal imports. In java_project, Base.java has no internal imports.
     let tmp = tempdir().unwrap();
-    make_cache_in("java_project", tmp.path());
+    let fixture_root = make_cache_in("java_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -492,7 +493,7 @@ fn test_targeted_no_deps_chain_is_target_only() {
         .expect("Base must be in order");
 
     let args = make_targeted_args(cache_path.clone(), &target);
-    let out = codeskel::commands::next::run_and_capture(args).unwrap();
+    let out = codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap();
 
     // Chain = [target] only → bootstrap returns target immediately at index 0
     assert!(!out.done);
@@ -506,7 +507,7 @@ fn test_targeted_no_deps_chain_is_target_only() {
 #[test]
 fn test_targeted_advances_through_chain_and_done() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -516,7 +517,7 @@ fn test_targeted_advances_through_chain_and_done() {
         .expect("UserService must be in order");
 
     // Bootstrap
-    let out0 = codeskel::commands::next::run_and_capture(
+    let out0 = codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target)
     ).unwrap();
     assert!(!out0.done);
@@ -527,7 +528,7 @@ fn test_targeted_advances_through_chain_and_done() {
     let mut pre_done = None;
     let mut last = None;
     for _ in 1..=chain_len {
-        let out = codeskel::commands::next::run_and_capture(
+        let out = codeskel::commands::next::run_and_capture_in(&fixture_root, 
             make_targeted_args(cache_path.clone(), &target)
         ).unwrap();
         if !out.done {
@@ -552,7 +553,7 @@ fn test_targeted_advances_through_chain_and_done() {
 fn test_targeted_done_then_bootstrap_again() {
     // After done (session deleted), calling next --target should bootstrap fresh (not error).
     let tmp = tempdir().unwrap();
-    make_cache_in("java_project", tmp.path());
+    let fixture_root = make_cache_in("java_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -562,17 +563,17 @@ fn test_targeted_done_then_bootstrap_again() {
         .expect("Base must be in order");
 
     // Bootstrap → done immediately (no deps)
-    let _out0 = codeskel::commands::next::run_and_capture(
+    let _out0 = codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target)
     ).unwrap();
-    let done = codeskel::commands::next::run_and_capture(
+    let done = codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target)
     ).unwrap();
     assert!(done.done);
     assert!(!tmp.path().join("session.json").exists());
 
     // Call again — should re-bootstrap cleanly
-    let restart = codeskel::commands::next::run_and_capture(
+    let restart = codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target)
     ).unwrap();
     assert!(!restart.done, "after done+delete, next call bootstraps again");
@@ -584,7 +585,7 @@ fn test_targeted_mismatch_warns_and_rebootstraps() {
     // Start a targeted session for target A, then call with target B.
     // Should warn to stderr and bootstrap fresh for B.
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -598,12 +599,12 @@ fn test_targeted_mismatch_warns_and_rebootstraps() {
         .expect("UserRepository must be in order");
 
     // Bootstrap for A
-    codeskel::commands::next::run_and_capture(
+    codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target_a)
     ).unwrap();
 
     // Now call with B — should bootstrap for B, not continue A's session
-    let out_b = codeskel::commands::next::run_and_capture(
+    let out_b = codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target_b)
     ).unwrap();
     assert!(!out_b.done);
@@ -619,7 +620,7 @@ fn test_targeted_project_mode_mismatch_rebootstraps_project() {
     // Start a targeted session, then call bare next (project mode).
     // Should warn and bootstrap project mode.
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -629,12 +630,12 @@ fn test_targeted_project_mode_mismatch_rebootstraps_project() {
         .expect("UserService must be in order");
 
     // Bootstrap targeted session
-    codeskel::commands::next::run_and_capture(
+    codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target)
     ).unwrap();
 
     // Call project mode (no --target)
-    let proj_out = codeskel::commands::next::run_and_capture(
+    let proj_out = codeskel::commands::next::run_and_capture_in(&fixture_root, 
         codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 }
     ).unwrap();
     assert!(!proj_out.done);
@@ -645,11 +646,11 @@ fn test_targeted_project_mode_mismatch_rebootstraps_project() {
 #[test]
 fn test_targeted_error_on_missing_target() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_project", tmp.path());
+    let fixture_root = make_cache_in("java_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let args = make_targeted_args(cache_path.clone(), "src/DoesNotExist.java");
-    let result = codeskel::commands::next::run_and_capture(args);
+    let result = codeskel::commands::next::run_and_capture_in(&fixture_root, args);
     assert!(result.is_err(), "missing target must return Err");
     let msg = format!("{}", result.unwrap_err());
     assert!(msg.contains("not found in cache"), "error message should say 'not found in cache', got: {}", msg);
@@ -676,7 +677,7 @@ fn test_scan_deletes_session() {
 
     let cache_path = tmp.path().join("cache.json");
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    codeskel::commands::next::run_and_capture(args).unwrap();
+    codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap();
     assert!(tmp.path().join("session.json").exists(), "session must exist after next");
 
     // Second scan via the command layer must delete session.json
@@ -699,7 +700,7 @@ fn test_scan_deletes_session() {
 fn test_targeted_skips_missing_chain_entry() {
     // Verify that a chain entry no longer in cache is skipped and the next valid entry is returned.
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let cache = codeskel::cache::read_cache(&cache_path).unwrap();
@@ -721,7 +722,7 @@ fn test_targeted_skips_missing_chain_entry() {
     }).unwrap();
 
     // Call next --target: should rescan file0, then skip ghost, then return file1
-    let out = codeskel::commands::next::run_and_capture(
+    let out = codeskel::commands::next::run_and_capture_in(&fixture_root, 
         make_targeted_args(cache_path.clone(), &target)
     ).unwrap();
 
@@ -735,16 +736,16 @@ fn test_targeted_skips_missing_chain_entry() {
 #[test]
 fn next_file_entry_omits_skip_and_internal_imports() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     // Advance twice to get a file that has internal_imports (UserService depends on User + UserRepository)
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    codeskel::commands::next::run_and_capture(args).unwrap(); // index 0
+    codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap(); // index 0
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    codeskel::commands::next::run_and_capture(args).unwrap(); // index 1
+    codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap(); // index 1
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    let output = codeskel::commands::next::run_and_capture(args).unwrap(); // index 2: UserService
+    let output = codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap(); // index 2: UserService
 
     assert!(!output.done);
     let json = serde_json::to_string(&output.file).unwrap();
@@ -761,16 +762,16 @@ fn next_file_entry_omits_skip_and_internal_imports() {
 #[test]
 fn next_dep_signatures_omit_has_docstring_and_line() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     // Advance to a file that has deps
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    codeskel::commands::next::run_and_capture(args).unwrap(); // index 0
+    codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap(); // index 0
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    codeskel::commands::next::run_and_capture(args).unwrap(); // index 1
+    codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap(); // index 1
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    let output = codeskel::commands::next::run_and_capture(args).unwrap(); // index 2: UserService
+    let output = codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap(); // index 2: UserService
 
     assert!(!output.deps.is_empty(), "UserService must have deps");
     let deps_json = serde_json::to_string(&output.deps).unwrap();
@@ -783,16 +784,16 @@ fn next_dep_signatures_omit_has_docstring_and_line() {
 #[test]
 fn next_deps_filtered_to_referenced_symbols() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_refs_project", tmp.path());
+    let fixture_root = make_cache_in("java_refs_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     // Advance to UserService (index 2 in topo order: User → UserRepository → UserService)
     for _ in 0..2 {
         let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-        codeskel::commands::next::run_and_capture(args).unwrap();
+        codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap();
     }
     let args = codeskel::cli::NextArgs { cache: cache_path.clone(), target: None, max_fields: 0 };
-    let output = codeskel::commands::next::run_and_capture(args).unwrap();
+    let output = codeskel::commands::next::run_and_capture_in(&fixture_root, args).unwrap();
 
     assert!(!output.done);
     let file_path = output.file.as_ref().unwrap().path.as_str();
@@ -819,7 +820,7 @@ fn next_deps_filtered_to_referenced_symbols() {
 fn next_output_is_compact_json() {
     use std::process::Command;
     let tmp = tempdir().unwrap();
-    make_cache_in("java_project", tmp.path());
+    let _fixture_root = make_cache_in("java_project", tmp.path());
     let cache_path = tmp.path().join("cache.json");
 
     let output = Command::new(env!("CARGO_BIN_EXE_codeskel"))
@@ -897,14 +898,14 @@ fn test_next_max_fields_truncates_fields() {
         target: None,
         max_fields: 5,
     };
-    codeskel::commands::next::run_and_capture(args0).unwrap(); // returns AppExCode
+    codeskel::commands::next::run_and_capture_in(tmp.path(), args0).unwrap(); // returns AppExCode
 
     let args1 = codeskel::cli::NextArgs {
         cache: tmp.path().join("cache.json"),
         target: None,
         max_fields: 5,
     };
-    let out = codeskel::commands::next::run_and_capture(args1).unwrap();
+    let out = codeskel::commands::next::run_and_capture_in(tmp.path(), args1).unwrap();
 
     assert!(!out.done);
     assert_eq!(out.deps.len(), 1);
@@ -974,12 +975,12 @@ fn test_next_max_fields_zero_omits_all_fields() {
     let args0 = codeskel::cli::NextArgs {
         cache: tmp.path().join("cache.json"), target: None, max_fields: 0,
     };
-    codeskel::commands::next::run_and_capture(args0).unwrap();
+    codeskel::commands::next::run_and_capture_in(tmp.path(), args0).unwrap();
 
     let args1 = codeskel::cli::NextArgs {
         cache: tmp.path().join("cache.json"), target: None, max_fields: 0,
     };
-    let out = codeskel::commands::next::run_and_capture(args1).unwrap();
+    let out = codeskel::commands::next::run_and_capture_in(tmp.path(), args1).unwrap();
 
     let dep = &out.deps[0];
     let field_count = dep.signatures.iter().filter(|s| s.kind == "field").count();
@@ -1157,7 +1158,7 @@ fn test_get_deps_includes_reverse_deps_for_interface() {
 #[test]
 fn test_next_includes_reverse_deps_for_interface() {
     use codeskel::cache::read_cache;
-    use codeskel::commands::next::run_and_capture;
+    use codeskel::commands::next::run_and_capture_in;
     use codeskel::cli::NextArgs;
 
     let tmp = tempdir().unwrap();
@@ -1182,7 +1183,7 @@ fn test_next_includes_reverse_deps_for_interface() {
     }).expect("UserRepository must be in order");
 
     for _ in 0..=repo_index {
-        let output = run_and_capture(NextArgs {
+        let output = run_and_capture_in(&root, NextArgs {
             cache: cache_path.clone(),
             target: None,
             max_fields: 20,
@@ -1227,11 +1228,11 @@ fn envelope_cache_not_found_via_get() {
 #[test]
 fn envelope_session_corrupt_via_next() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_project", tmp.path());
+    let fixture_root = make_cache_in("java_project", tmp.path());
     // Write a non-JSON session file so try_read_session can't parse it.
     std::fs::write(tmp.path().join("session.json"), b"{not json").unwrap();
 
-    let result = codeskel::commands::next::run_and_capture(codeskel::cli::NextArgs {
+    let result = codeskel::commands::next::run_and_capture_in(&fixture_root, codeskel::cli::NextArgs {
         cache: tmp.path().join("cache.json"),
         target: None,
         max_fields: 0,
@@ -1262,8 +1263,8 @@ fn envelope_project_root_missing_via_scan() {
 #[test]
 fn envelope_target_not_in_tree_via_next() {
     let tmp = tempdir().unwrap();
-    make_cache_in("java_project", tmp.path());
-    let result = codeskel::commands::next::run_and_capture(codeskel::cli::NextArgs {
+    let fixture_root = make_cache_in("java_project", tmp.path());
+    let result = codeskel::commands::next::run_and_capture_in(&fixture_root, codeskel::cli::NextArgs {
         cache: tmp.path().join("cache.json"),
         target: Some("does/not/exist.java".into()),
         max_fields: 0,
@@ -1272,4 +1273,27 @@ fn envelope_target_not_in_tree_via_next() {
     let ce = err.downcast_ref::<codeskel::error::CodeskelError>()
         .expect("error must be a CodeskelError");
     assert_eq!(ce.code(), "TARGET_NOT_IN_TREE");
+}
+
+#[test]
+fn envelope_project_root_mismatch_via_next() {
+    // Cache built for fixture A; invoke `next` claiming cwd is some unrelated
+    // tempdir. The fingerprint check must refuse with PROJECT_ROOT_MISMATCH
+    // before mutating any state.
+    let tmp = tempdir().unwrap();
+    let _fixture_root = make_cache_in("java_project", tmp.path());
+    let elsewhere = tempdir().unwrap();
+
+    let result = codeskel::commands::next::run_and_capture_in(
+        elsewhere.path(),
+        codeskel::cli::NextArgs {
+            cache: tmp.path().join("cache.json"),
+            target: None,
+            max_fields: 0,
+        },
+    );
+    let err = result.expect_err("foreign cwd must error");
+    let ce = err.downcast_ref::<codeskel::error::CodeskelError>()
+        .expect("error must be a CodeskelError");
+    assert_eq!(ce.code(), "PROJECT_ROOT_MISMATCH");
 }

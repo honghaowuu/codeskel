@@ -31,6 +31,27 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// Verify that `cache.project_root` (canonicalized) matches the given
+/// canonicalized cwd. Returns `Err(ProjectRootMismatch)` on mismatch — used by
+/// `next` to refuse caches built for a different project. If either path can't
+/// be canonicalized (e.g. the cache root no longer exists), falls back to the
+/// raw stored string for the comparison.
+pub fn verify_project_root_matches(cache: &CacheFile, cwd: &Path) -> anyhow::Result<()> {
+    let cwd_canonical = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let cache_root_path = std::path::Path::new(&cache.project_root);
+    let cache_canonical = cache_root_path
+        .canonicalize()
+        .unwrap_or_else(|_| cache_root_path.to_path_buf());
+    if cwd_canonical != cache_canonical {
+        return Err(CodeskelError::ProjectRootMismatch {
+            cache_root: cache.project_root.clone(),
+            cwd: cwd.display().to_string(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 pub fn read_cache(cache_path: &Path) -> anyhow::Result<CacheFile> {
     let content = match std::fs::read_to_string(cache_path) {
         Ok(s) => s,

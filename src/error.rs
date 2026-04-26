@@ -14,6 +14,10 @@ pub enum CodeskelError {
     ProjectRootMissing(PathBuf),
     /// Caller asked about a file that the cache doesn't know about.
     TargetNotInTree(String),
+    /// The cache was built for a different project root than the one the
+    /// command was invoked from. Prevents `next` from quietly walking and
+    /// commenting source files outside the user's current project.
+    ProjectRootMismatch { cache_root: String, cwd: String },
 }
 
 impl CodeskelError {
@@ -23,6 +27,7 @@ impl CodeskelError {
             Self::SessionCorrupt(_) => "SESSION_CORRUPT",
             Self::ProjectRootMissing(_) => "PROJECT_ROOT_MISSING",
             Self::TargetNotInTree(_) => "TARGET_NOT_IN_TREE",
+            Self::ProjectRootMismatch { .. } => "PROJECT_ROOT_MISMATCH",
         }
     }
 
@@ -32,6 +37,9 @@ impl CodeskelError {
             Self::SessionCorrupt(_) => Some("delete the file and rerun"),
             Self::ProjectRootMissing(_) => None,
             Self::TargetNotInTree(_) => Some("run `codeskel scan` after the file was added"),
+            Self::ProjectRootMismatch { .. } => {
+                Some("cd to the cache's project root, or run `codeskel scan .` to rebuild here")
+            }
         }
     }
 }
@@ -43,6 +51,10 @@ impl fmt::Display for CodeskelError {
             Self::SessionCorrupt(p) => write!(f, "session file at {} is corrupt", p.display()),
             Self::ProjectRootMissing(p) => write!(f, "project root not found: {}", p.display()),
             Self::TargetNotInTree(t) => write!(f, "'{}' not found in cache", t),
+            Self::ProjectRootMismatch { cache_root, cwd } => write!(
+                f,
+                "cache was built for '{cache_root}' but invoked from '{cwd}'"
+            ),
         }
     }
 }
